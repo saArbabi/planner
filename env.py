@@ -202,19 +202,19 @@ class Env():
         if terminal:
             reward += self.COLLISION_REWARD
 
-        if self.ego.speed_long < self.max_speed:
-            reward -= abs(self.ego.speed_long - self.max_speed)/self.max_speed
+        # if self.ego.speed_long < self.max_speed:
+        #     reward -= abs(self.ego.speed_long - self.max_speed)/self.max_speed
+        #
+        # else:
+        #     if self.ego.act_long >= 0:
+        #         reward -= 0.5
 
-        else:
-            if self.ego.act_long >= 0:
-                reward -= 0.5
-
-        reward -= (speed_cost_base**abs(self.ego.act_long) - 1) / speed_cost_base**3
+        # reward -= (speed_cost_base**abs(self.ego.act_long) - 1) / speed_cost_base**3
 
 
 
-        # if self.ego.lane_id == 1:
-        #     reward += 0.4
+        if self.ego.lane_id == 2:
+            reward += 1
 
         # if obs['ego']['lane_id'] == 1:
         #     reward += -1
