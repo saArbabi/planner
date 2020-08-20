@@ -42,7 +42,7 @@ class MCTSDPW(AbstractPlanner):
         self.root = DecisionNode(parent=None, planner=self)
 
     def get_available_decisions(self, state):
-        return [0, 1, 2]
+        return [2, 5]
         # if state.ego.act_lat > 0 and abs(state.ego.y) > 1:
         #     """Ego performing lc left """
         #     return [3, 4, 5]
