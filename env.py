@@ -144,7 +144,7 @@ class Env():
             if car_id in  back_orientations and obs['dx'] < 0:
                 _car_id = front_orientations[back_orientations.index(car_id)]
 
-
+    
             obs['dx'] = abs(obs['dx'])
             if _car_id is not None:
                 if _car_id in self.vehicles:
@@ -163,7 +163,7 @@ class Env():
         obs_all = {'ego': {}}
 
         obs_all['ego']['lane_id'] = self.ego.lane_id
-        obs_all['ego']['speed_long'] = self.ego.speed_long
+        obs_all['ego']['vel'] = self.ego.vel
         obs_all['ego']['act_long'] = self.ego.act_long
 
         obs_all['ego']['x'] = self.ego.x
@@ -176,9 +176,9 @@ class Env():
             obs = {}
             obs['dx'] = self.ego.x - self.vehicles[car_id].x
             obs['dy'] = abs(self.ego.y_cor - self.vehicles[car_id].y_cor)
-            obs['vxd'] = self.ego.speed_long - self.vehicles[car_id].speed_long
+            obs['vxd'] = self.ego.vel - self.vehicles[car_id].vel
             obs, _car_id = self._update_vehicle_ids(obs, car_id)
-            obs['time_headway'] = obs['dx']/self.ego.speed_long
+            obs['time_headway'] = obs['dx']/self.ego.vel
 
             obs_all[_car_id] = obs
 
@@ -202,8 +202,8 @@ class Env():
         if terminal:
             reward += self.COLLISION_REWARD
 
-        # if self.ego.speed_long < self.max_speed:
-        #     reward -= abs(self.ego.speed_long - self.max_speed)/self.max_speed
+        # if self.ego.vel < self.max_speed:
+        #     reward -= abs(self.ego.vel - self.max_speed)/self.max_speed
         #
         # else:
         #     if self.ego.act_long >= 0:

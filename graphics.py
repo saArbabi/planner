@@ -171,5 +171,3 @@ class Viewer():
 
         if self.var_recording:
             self.draw_recorded_var(self.ax_recorded_variable)
-
-        plt.pause(self.STEP_SIZE)

@@ -5,23 +5,23 @@ import matplotlib.pyplot as plt
 
 import time
 env = Env(2)
-env.ego = EgoVehicle(env, x=30, speed_long=10, lane_id=1)
-env.vehicles['bl'] = Vehicle(x=10, speed_long=9, lane_id=2)
+env.ego = EgoVehicle(env, x=30, vel=10, lane_id=1)
+env.vehicles['bl'] = Vehicle(x=10, vel=9, lane_id=2)
 env.vehicles['bl'].act_long = 1
-# env.vehicles['f'] = Vehicle(x=30, speed_long=10, lane_id=1)
+# env.vehicles['f'] = Vehicle(x=30, vel=10, lane_id=1)
 
-# env.vehicles['f'] = Vehicle(x=60, speed_long=9, lane_id=1)
+# env.vehicles['f'] = Vehicle(x=60, vel=9, lane_id=1)
 
 obs = env.reset()
-# env.record (env_object=env.ego, attribute='speed_long')
-# env.record (env_object=env.ego, attribute='speed_long')
+# env.record (env_object=env.ego, attribute='vel')
+# env.record (env_object=env.ego, attribute='vel')
 # env.record(env_object=env.vehicles['f'], attribute='desired_headway')
 
 # env.render(PAUSE_CONTROL='on')
 env.render(PAUSE_CONTROL='off')
 
-env.record(env_object=env.ego, attribute='speed_long')
-env.viewer.set_ego_label(env_object=env.ego, attribute='speed_long')
+env.record(env_object=env.ego, attribute='vel')
+env.viewer.set_ego_label(env_object=env.ego, attribute='vel')
 # x = np.array([x/10 for x in range(30)])
 # y = eval('(5**x - 1)/125')
 # plt.plot(x, y)

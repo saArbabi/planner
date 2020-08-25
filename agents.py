@@ -7,9 +7,9 @@ from mcts import MCTSDPW
 class Vehicle(object):
     step_size = 0.1 # s update rate - used for dynamics
 
-    def __init__(self, x, speed_long, lane_id):
+    def __init__(self, x, vel, lane_id):
         self.x = x
-        self.speed_long = speed_long # longitudinal speed [m/s]
+        self.vel = vel # longitudinal speed [m/s]
         self.desired_headway = None
 
         self.act_long = 0 # longitudinal acceleration [m/s^2]
@@ -33,12 +33,12 @@ class Vehicle(object):
 
         self.act()
 
-        self.x = self.x + self.speed_long * self.step_size \
+        self.x = self.x + self.vel * self.step_size \
                                     + 0.5 * self.act_long * self.step_size **2
 
         y_delta = self.act_lat*self.step_size
         self.y += y_delta
-        self.speed_long = self.speed_long + self.act_long * self.step_size
+        self.vel = self.vel + self.act_long * self.step_size
         self.y_cor += y_delta
 
         if self.y >= 1.85 and self.act_lat > 0:
@@ -62,8 +62,8 @@ class EgoVehicle(Vehicle):
                 8: ['LCR', 'IDLE']
                 }
 
-    def __init__(self, env, x, speed_long, lane_id):
-        super(EgoVehicle, self).__init__(x, speed_long, lane_id)
+    def __init__(self, env, x, vel, lane_id):
+        super(EgoVehicle, self).__init__(x, vel, lane_id)
 
         self.env = env
         self.controller = Controller(env, self)
@@ -118,7 +118,7 @@ class Controller(object):
         self.env = env
         self.ego = ego
         self.desired_headway = None
-        self.desired_speed = self.ego.speed_long #[m/s]
+        self.desired_speed = self.ego.vel #[m/s]
         self.max_speed = 20 #[m/s]
         self.min_speed = 10 #[m/s]
 
@@ -175,7 +175,7 @@ class Controller(object):
         #     if acceleration_change == 'DOWN':
         #         self.desired_speed -= 5
         #
-        # acc = self.desired_speed - self.ego.speed_long
+        # acc = self.desired_speed - self.ego.vel
         # self.ego.act_long = self.clip_action(acc, max_value=3)
 
         # if acceleration_change == 'UP':
