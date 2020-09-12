@@ -20,7 +20,7 @@ class Env():
         self.lane_width = 3.7 #m
         self.viewer = None
         self.observation_history = []
-        self.vehicles = {} # cars indexed by their id
+        self.  = {} # cars indexed by their id
         self.ego = None
         self.max_speed = 20 # m/s
 
@@ -144,7 +144,7 @@ class Env():
             if car_id in  back_orientations and obs['dx'] < 0:
                 _car_id = front_orientations[back_orientations.index(car_id)]
 
-    
+
             obs['dx'] = abs(obs['dx'])
             if _car_id is not None:
                 if _car_id in self.vehicles:
