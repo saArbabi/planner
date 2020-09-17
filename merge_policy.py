@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 reload(data_prep)
 DataObj = data_prep.DataObj
 
-class Gen():
+class GenModel():
     """TODO:
     - reward (A*state + B*Belief)
     - can be attr of the mcts planner
@@ -118,8 +118,8 @@ class MergePolicy():
 config = loadConfig('exp003')
 controller = MergePolicy(config)
 
-mveh_df, yveh_df = controller.data_obj.get_episode_df(811)
-x_arr, y_arr = controller.data_obj.get_stateTarget_arr(mveh_df, yveh_df)
+m_df, y_df = controller.data_obj.get_episode_df(811)
+x_arr, y_arr = controller.data_obj.get_stateTarget_arr(m_df, y_df)
 
 # %%
 
