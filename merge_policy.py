@@ -63,7 +63,7 @@ class GenModel():
                 state_arr[:,indx] = mveh_a[:, 0] - yveh_a
 
             if state_key == 'a_ratio':
-                state_arr[:,indx] = np.log(np.abs(mveh_a[:, 0]))/ np.abs(yveh_a)
+                state_arr[:,indx] = np.log(np.abs(mveh_a[:, 0])/ np.abs(yveh_a))
 
         return state_arr
 
@@ -110,7 +110,7 @@ class ModelEvaluation():
         self.policy = MergePolicy(self.data_obj, config)
         self.gen = GenModel(self.data_obj)
         # self.driver_model = YieldModel(data_obj, config)
-        self.steps_n = 20 # time-steps into the future
+        self.steps_n = 50 # time-steps into the future
         self.samples_n = 10 # time-steps into the future
         self.scalar_indx = self.data_obj.scalar_indx
 
@@ -136,25 +136,26 @@ class ModelEvaluation():
             state0 - current vehicle state
         :Return: [[x_cor, y_cor], ...]
         """
-        state_arr = np.repeat([self.state_t0], self.samples_n, axis=0)
+        mveh_a = np.zeros([self.samples_n, self.steps_n-1, 2])
+        state_arr = np.zeros([self.samples_n, self.steps_n, len(self.state_t0)])
+        state_arr[:,0,:] = self.state_t0
+
         x = np.zeros([self.samples_n, self.steps_n])
         y = np.zeros([self.samples_n, self.steps_n])
-        pc = np.zeros([self.samples_n, self.steps_n])
-        pc[:, 0] = state_arr[:, self.scalar_indx['pc_mveh']]
 
         for t in range(1, self.steps_n):
-            mveh_a = self.policy.get_actions(state_arr.copy())
-            yveh_a = np.repeat(self.yveh_as[t], self.samples_n, axis=0)
-            x[:, t] = x[:, t-1] + state_arr[:, self.scalar_indx['vel_mveh']]*0.1
-            y[:, t] = y[:, t-1] + mveh_a[:,1]*0.1
-            pc[:, t] = state_arr[:, self.scalar_indx['pc_mveh']]
-            state_arr = self.gen.step(state_arr, mveh_a, yveh_a)
+            mveh_a[:,t-1,:] = self.policy.get_actions(state_arr[:,t-1,:].copy())
+            yveh_a = np.repeat(self.yveh_as[t-1], self.samples_n, axis=0)
+            x[:, t] = x[:, t-1] + state_arr[:,t-1,self.scalar_indx['vel_mveh']]*0.1
+            y[:, t] = y[:, t-1] + mveh_a[:,t-1,1]*0.1
+            state_arr[:,t,:] = self.gen.step(state_arr[:,t-1,:].copy(), mveh_a[:,t-1,:], yveh_a)
 
-        return x, y, pc
+        return x, y, state_arr, mveh_a
 
     def sceneSetup(self, episode_id):
         m_df, y_df = self.data_obj.get_episode_df(self.val_m_df, self.val_y_df, episode_id)
         v_x_arr, v_y_arr = self.data_obj.get_stateTarget_arr(m_df, y_df)
+        self.state_arr_true = np.array(v_x_arr[0:self.steps_n])
         v_x_arr, v_y_arr = self.data_obj.obsSequence(v_x_arr, v_y_arr)
         self.state_t0 = v_x_arr[0]
         self.yveh_as = y_df['act_long'].values
@@ -170,24 +171,55 @@ class ModelEvaluation():
             y[t] = y[t-1] + act_lat[t]*0.1
         self.x_true = x
         self.y_true = y
-        self.pc_true = m_df['pc'].values[0:self.steps_n]
+        self.mveh_a_true = m_df[['act_long', 'act_lat']].values[0:self.steps_n-1]
+
 
 eval = ModelEvaluation(config)
-x, y, pc = eval.trajCompute()
+x, y, state_arr, mveh_a = eval.trajCompute()
 plt.plot(eval.x_true, eval.y_true, color='red')
 for i in range(10):
     plt.plot(x[i,:], y[i,:], color='grey')
+# %%
+eval.scalar_indx
+# %%
+"""State plots
+"""
+for item in eval.scalar_indx:
+    fig = plt.figure()
+    plt.plot(eval.state_arr_true[:, eval.scalar_indx[item]], color='red')
+    for s in range(eval.samples_n):
+        plt.plot(state_arr[s, :, eval.scalar_indx[item]], color='grey')
+    plt.grid()
+    plt.title(item)
+    plt.xlabel('time step (n)')
+    plt.xticks(range(eval.steps_n))
 
 # %%
-for i in range(10):
-    plt.plot(pc[i,:], color='grey')
-    plt.plot(eval.pc_true, color='red')
+"""Action plots
+"""
+for item in ['act_long', 'act_lat']:
+    if item == 'act_long':
+        indx = 0
+    else:
+        indx = 1
+
+    fig = plt.figure()
+    plt.plot(eval.mveh_a_true[:, indx], color='red')
+    for s in range(eval.samples_n):
+        plt.plot(mveh_a[s, :, indx], color='grey')
+    plt.grid()
+    plt.title(item)
+    plt.xlabel('time step (n)')
+    plt.xticks(range(eval.steps_n))
+
 
 # %%
 max(eval.pc_true[0:90])
 plt.plot(pc[0])
 plt.plot(eval.pc_true[0:90])
 plt.grid()
+            pc[:, t] = state_arr[:, self.scalar_indx['pc_mveh']]
+
 # %%
 
 # %%
