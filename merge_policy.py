@@ -1,8 +1,6 @@
 import numpy as np
 import pandas as pd
 from models.core.train_eval.utils import loadConfig
-from models.core.preprocessing import data_prep
-DataPrep = data_prep.DataPrep
 import json
 from models.core.tf_models import utils
 import matplotlib.pyplot as plt
@@ -11,10 +9,12 @@ import os
 from tensorflow import keras
 import warnings
 warnings.filterwarnings('ignore')
+import models.core.tf_models.abstract_model as am
+import pickle
+
 # %%
 
 # %%
-reload(data_prep)
 
 class GenModel():
     """TODO:
@@ -83,9 +83,10 @@ class MergePolicy():
         traj_n = 10
 
     def loadModel(self, config):
-        dirName = './models/experiments/'+config['exp_id'] +'/trained_model'
-        self.model = keras.models.load_model(dirName,
-                                    custom_objects={'loss': utils.nll_loss(config)})
+        checkpoint_dir = './models/experiments/'+config['exp_id'] +'/model_dir'
+        self.model = am.FFMDN(config)
+        Checkpoint = tf.train.Checkpoint(model=model)
+        Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
 
     def get_actions(self, state_arr):
         """
@@ -173,7 +174,7 @@ class ModelEvaluation():
         self.y_true = y
         self.mveh_a_true = m_df[['act_long', 'act_lat']].values[0:self.steps_n-1]
 
-
+config = loadConfig('series000exp009')
 eval = ModelEvaluation(config)
 x, y, state_arr, mveh_a = eval.trajCompute()
 plt.plot(eval.x_true, eval.y_true, color='red')
@@ -226,9 +227,8 @@ plt.grid()
 
 a = np.array([1,2,3,4,5,6])
 np.split(a, 2, axis=0)
-import pickle
 
-with open('./datasets/preprocessed/'+'20200921-123920'+'/'+'data_obj', 'rb') as f:
+with open('./datasets/preprocessed/'+'20200924-153215'+'/'+'data_obj', 'rb') as f:
     data_obj = pickle.load(f)
 
 config = loadConfig('exp001')
