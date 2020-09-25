@@ -8,9 +8,9 @@ from importlib import reload
 import os
 from tensorflow import keras
 import warnings
-warnings.filterwarnings('ignore')
 import models.core.tf_models.abstract_model as am
 import pickle
+import tensorflow as tf
 
 # %%
 
@@ -85,8 +85,8 @@ class MergePolicy():
     def loadModel(self, config):
         checkpoint_dir = './models/experiments/'+config['exp_id'] +'/model_dir'
         self.model = am.FFMDN(config)
-        Checkpoint = tf.train.Checkpoint(model=model)
-        Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir))
+        Checkpoint = tf.train.Checkpoint(net=self.model)
+        Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
 
     def get_actions(self, state_arr):
         """
@@ -94,7 +94,7 @@ class MergePolicy():
         :Return: Control actions for the current state_arr
         """
         state_arr = self.data_obj.applystateScaler(state_arr.reshape(-1, state_arr.shape[-1]))
-        parameter_vector = self.model.predict(state_arr)
+        parameter_vector = self.model(np.append(state_arr, self.fixed_arr_t, axis=1))
         alphas, mus_long, sigmas_long, mus_lat, sigmas_lat, rhos = np.split(parameter_vector[0], 6, axis=0)
 
         action_samples = utils.get_pdf_samples(1, parameter_vector, config['model_type'])
@@ -115,7 +115,7 @@ class ModelEvaluation():
         self.samples_n = 10 # time-steps into the future
         self.scalar_indx = self.data_obj.scalar_indx
 
-        self.sceneSetup(episode_id=1635)
+        self.sceneSetup(episode_id=823)
 
     def setup(self):
         config_names = os.listdir(self.dirName+'config_files')
@@ -126,10 +126,12 @@ class ModelEvaluation():
             if config == self.data_config:
                 with open(self.dirName+config_name[:-5]+'/'+'data_obj', 'rb') as f:
                     self.data_obj = pickle.load(f)
-                with open(self.dirName+config_name[:-5]+'/'+'val_m_df', 'rb') as f:
-                    self.val_m_df = pickle.load(f)
-                with open(self.dirName+config_name[:-5]+'/'+'val_y_df', 'rb') as f:
-                    self.val_y_df = pickle.load(f)
+                with open(self.dirName+config_name[:-5]+'/'+'test_m_df', 'rb') as f:
+                    self.test_m_df = pickle.load(f)
+                with open(self.dirName+config_name[:-5]+'/'+'test_y_df', 'rb') as f:
+                    self.test_y_df = pickle.load(f)
+                with open(self.dirName+config_name[:-5]+'/'+'test_fixed_arr', 'rb') as f:
+                    self.test_fixed_arr = pickle.load(f)
 
     def trajCompute(self):
         """
@@ -139,25 +141,27 @@ class ModelEvaluation():
         """
         mveh_a = np.zeros([self.samples_n, self.steps_n-1, 2])
         state_arr = np.zeros([self.samples_n, self.steps_n, len(self.state_t0)])
-        state_arr[:,0,:] = self.state_t0
-
+        state_arr[:,0,:] = self.state_t0.copy()
         x = np.zeros([self.samples_n, self.steps_n])
         y = np.zeros([self.samples_n, self.steps_n])
+        self.policy.time_stamp = 0
 
         for t in range(1, self.steps_n):
+            self.policy.fixed_arr_t = np.repeat([self.fixed_arr[t-1]], self.samples_n, axis=0)
             mveh_a[:,t-1,:] = self.policy.get_actions(state_arr[:,t-1,:].copy())
             yveh_a = np.repeat(self.yveh_as[t-1], self.samples_n, axis=0)
             x[:, t] = x[:, t-1] + state_arr[:,t-1,self.scalar_indx['vel_mveh']]*0.1
             y[:, t] = y[:, t-1] + mveh_a[:,t-1,1]*0.1
             state_arr[:,t,:] = self.gen.step(state_arr[:,t-1,:].copy(), mveh_a[:,t-1,:], yveh_a)
-
+            self.policy.time_stamp += 0.1
         return x, y, state_arr, mveh_a
 
     def sceneSetup(self, episode_id):
-        m_df, y_df = self.data_obj.get_episode_df(self.val_m_df, self.val_y_df, episode_id)
+        m_df, y_df = self.data_obj.get_episode_df(self.test_m_df, self.test_y_df, episode_id)
         v_x_arr, v_y_arr = self.data_obj.get_stateTarget_arr(m_df, y_df)
         self.state_arr_true = np.array(v_x_arr[0:self.steps_n])
-        v_x_arr, v_y_arr = self.data_obj.obsSequence(v_x_arr, v_y_arr)
+        # v_x_arr, v_y_arr = self.data_obj.obsSequence(v_x_arr, v_y_arr)
+        self.fixed_arr = self.data_obj.get_fixedSate(self.test_fixed_arr, episode_id)
         self.state_t0 = v_x_arr[0]
         self.yveh_as = y_df['act_long'].values
 
@@ -174,14 +178,16 @@ class ModelEvaluation():
         self.y_true = y
         self.mveh_a_true = m_df[['act_long', 'act_lat']].values[0:self.steps_n-1]
 
-config = loadConfig('series000exp009')
+config = loadConfig('series000exp001')
 eval = ModelEvaluation(config)
 x, y, state_arr, mveh_a = eval.trajCompute()
 plt.plot(eval.x_true, eval.y_true, color='red')
 for i in range(10):
     plt.plot(x[i,:], y[i,:], color='grey')
+
+
 # %%
-eval.scalar_indx
+
 # %%
 """State plots
 """
@@ -212,84 +218,3 @@ for item in ['act_long', 'act_lat']:
     plt.title(item)
     plt.xlabel('time step (n)')
     plt.xticks(range(eval.steps_n))
-
-
-# %%
-max(eval.pc_true[0:90])
-plt.plot(pc[0])
-plt.plot(eval.pc_true[0:90])
-plt.grid()
-            pc[:, t] = state_arr[:, self.scalar_indx['pc_mveh']]
-
-# %%
-
-# %%
-
-a = np.array([1,2,3,4,5,6])
-np.split(a, 2, axis=0)
-
-with open('./datasets/preprocessed/'+'20200924-153215'+'/'+'data_obj', 'rb') as f:
-    data_obj = pickle.load(f)
-
-config = loadConfig('exp001')
-eval = ModelEvaluation(data_obj, config)
-x, y = eval.trajCompute()
-for i in range(10):
-    plt.plot(x[i,:], y[i,:], color='grey')
-x
-# %%
-controller = MergePolicy(data_obj, config)
-
-data_obj.validation_episodes[3]
-m_df, y_df = data_obj.get_episode_df(data_obj.val_m_df, data_obj.val_y_df, 1635)
-v_x_arr, v_y_arr = data_obj.get_stateTarget_arr(m_df, y_df)
-v_x_arr, v_y_arr = data_obj.obsSequence(v_x_arr, v_y_arr)
-controller.get_actions(v_x_arr[0])
-
-# %%
-
-controller = MergePolicy(config)
-
-m_df, y_df = data_prep.get_episode_df(811)
-x_arr, y_arr = data_prep.get_stateTarget_arr(m_df, y_df)
-
-# %%
-
-x_arr[0]
-controller.get_actions(x_arr[0:5], config)
-a
-a[:,0]
-a.reshape(1, -1)
-# %%
-x, y = controller.trajCompute(controller.veh_state[0], config)
-indx = controller.mvehindx
-
-def true_traj():
-    x = [0]
-    y = [0]
-    for i in range(10):
-        x.append(x[-1] + controller.veh_state[i][indx['vel']]*0.1)
-        y.append(x[-1] + controller.veh_state[i][indx['pc']]*0.1)
-
-    return x, y
-x_true, y_true = true_traj()
-# %%
-for i in range(10):
-    plt.plot(np.array(x)[:,i], np.array(y)[:,i], color='black')
-
-# %%
-np.array(x)[:,0]
-
-
-a = controller.veh_state[0:5]
-a
-from importlib import reload
-reload(utils)
-
-
-
-
-
-state_arr[0,:] = 0
-trajCollection = []
-for step in range(trajSteps_n):
