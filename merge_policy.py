@@ -11,8 +11,10 @@ import warnings
 import models.core.tf_models.abstract_model as am
 import pickle
 import tensorflow as tf
+import multiprocessing
 
 # %%
+
 
 # %%
 
@@ -86,7 +88,8 @@ class MergePolicy():
         checkpoint_dir = './models/experiments/'+config['exp_id'] +'/model_dir'
         self.model = am.FFMDN(config)
         Checkpoint = tf.train.Checkpoint(net=self.model)
-        Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
+        # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
+        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
 
     def get_actions(self, state_arr):
         """
@@ -94,7 +97,8 @@ class MergePolicy():
         :Return: Control actions for the current state_arr
         """
         state_arr = self.data_obj.applystateScaler(state_arr.reshape(-1, state_arr.shape[-1]))
-        parameter_vector = self.model(np.append(state_arr, self.fixed_arr_t, axis=1))
+        # parameter_vector = self.model(state_arr, training=False)
+        parameter_vector = self.model(np.append(state_arr, self.fixed_arr_t, axis=1), training=False)
         alphas, mus_long, sigmas_long, mus_lat, sigmas_lat, rhos = np.split(parameter_vector[0], 6, axis=0)
 
         action_samples = utils.get_pdf_samples(1, parameter_vector, config['model_type'])
@@ -148,6 +152,7 @@ class ModelEvaluation():
 
         for t in range(1, self.steps_n):
             self.policy.fixed_arr_t = np.repeat([self.fixed_arr[t-1]], self.samples_n, axis=0)
+            # self.policy.fixed_arr_t = np.repeat([self.fixed_arr[0]], self.samples_n, axis=0)
             mveh_a[:,t-1,:] = self.policy.get_actions(state_arr[:,t-1,:].copy())
             yveh_a = np.repeat(self.yveh_as[t-1], self.samples_n, axis=0)
             x[:, t] = x[:, t-1] + state_arr[:,t-1,self.scalar_indx['vel_mveh']]*0.1
@@ -178,8 +183,9 @@ class ModelEvaluation():
         self.y_true = y
         self.mveh_a_true = m_df[['act_long', 'act_lat']].values[0:self.steps_n-1]
 
-config = loadConfig('series000exp001')
+config = loadConfig('series000exp003')
 eval = ModelEvaluation(config)
+
 x, y, state_arr, mveh_a = eval.trajCompute()
 plt.plot(eval.x_true, eval.y_true, color='red')
 for i in range(10):
