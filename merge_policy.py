@@ -187,7 +187,7 @@ class ModelEvaluation():
         self.samples_n = 10 # time-steps into the future
         self.scalar_indx = self.data_obj.scalar_indx
 
-        self.sceneSetup(episode_id=7)
+        self.sceneSetup(episode_id=516)
 
     def setup(self):
         config_names = os.listdir(self.dirName+'config_files')
@@ -274,15 +274,15 @@ class ModelEvaluation():
 
         return mveh_traj, yveh_traj
 
-config = loadConfig('series002exp004')
+config = loadConfig('series002exp006')
 eval_obj = ModelEvaluation(config)
 plt.plot(eval_obj.m_id_df['act_long'])
-plt.plot(eval_obj.m_id_df['act_lat'])
+# plt.plot(eval_obj.m_id_df['act_lat'])
 
 # %%
 # %%
 fig, axs = plt.subplots(2, 1)
-for i in range (2):
+for i in range (10):
     mveh_traj, yveh_traj = eval_obj.trajCompute()
     axs[0].plot(range(19, 39), mveh_traj[:, 0])
     axs[1].plot(range(19, 39), yveh_traj)
@@ -301,7 +301,7 @@ plt.show()
 
 
 # %%
-step = 15
+step = 0
 obs_seq = eval_obj.state_arr[step]
 obs_seq.shape = (1, 20, 15)
 condition_t0 = np.array(eval_obj.condition_arr[step])
@@ -310,7 +310,7 @@ eval_obj.con = condition_t0
 eval_obj.st[0][-1]
 eval_obj.con.shape
 condition_t0[0][0]
-eval_obj.con.shape = (1, 20, 4)
+eval_obj.con.shape = (1, 20, 2)
 gmm_m, gmm_y = eval_obj.policy.model([eval_obj.st, eval_obj.con])
 for i in range (10):
     ma = gmm_m.sample().numpy()
