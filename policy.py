@@ -9,11 +9,19 @@ from models.core.tf_models.cae_model import CAE
 import pickle
 import tensorflow as tf
 import dill
+from collections import deque
 
 from models.core.tf_models import utils
 reload(utils)
 
 # %%
+
+from models.core.tf_models import cae_model
+reload(cae_model)
+from models.core.tf_models.cae_model import CAE
+
+
+
 class GenModel():
     """TODO:
     - reward (A*state + B*Belief)
@@ -120,7 +128,7 @@ class MergePolicy():
 
     def loadModel(self, config):
         checkpoint_dir = './models/experiments/'+config['exp_id'] +'/model_dir'
-        self.model = CAE(config)
+        self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
         Checkpoint.restore(checkpoint_dir+'/ckpt-7')
@@ -132,17 +140,16 @@ class MergePolicy():
         """
         :Return: unscaled action array for all cars
         """
-        self.dec_model.pred_horizon = steps_n # does not have to match training pred_horizon
+        self.dec_model.steps_n = steps_n
+        self.dec_model.traj_n = traj_n
+
         gmm_m, gmm_y, gmm_f, gmm_fadj = self.dec_model(dec_inputs)
         total_acts_count = traj_n*steps_n
         veh_acts_count = 5 # 2 for merging, 1 for each of the other cars
 
         unscaled_acts = np.zeros([total_acts_count, veh_acts_count])
-
         veh_acts = gmm_m.sample().numpy()
-        print(veh_acts.shape)
         veh_acts.shape = (total_acts_count, 2)
-
         i = 2
         unscaled_acts[:, 0:i] = veh_acts
         for gmm in [gmm_y, gmm_f, gmm_fadj]:
@@ -185,6 +192,32 @@ class ModelEvaluation():
                 with open(self.dirName+config_name[:-5]+'/'+'conditions_test', 'rb') as f:
                     self.conditions_test = pickle.load(f)
 
+    def obsSequence(self, state_arr, target_arr, condition_arr):
+        state_seq = []
+        target_seq = []
+        condition_seq = []
+
+        step_size = 1
+        pred_horizon = 20
+        obsSequence_n = 20
+        i_reset = 0
+        i = 0
+        for chunks in range(step_size):
+            prev_states = deque(maxlen=obsSequence_n)
+            while i < (len(state_arr)-2):
+                # 2 is minimum prediction horizon
+                prev_states.append(state_arr[i])
+                if len(prev_states) == obsSequence_n:
+                    state_seq.append(np.array(prev_states))
+                    target_seq.append(target_arr[i:i+pred_horizon].tolist())
+                    condition_seq.append(condition_arr[i:i+pred_horizon].tolist())
+
+                i += step_size
+            i_reset += 1
+            i = i_reset
+
+        return state_seq, target_seq, condition_seq
+
     def sceneSetup(self, episode_id):
         self.true_st_arr = self.states_test[self.states_test[:, 0] == episode_id][:, 1:]
         self.true_target_arr = self.targets_test[self.targets_test[:, 0] == episode_id][:, 1:]
@@ -192,7 +225,7 @@ class ModelEvaluation():
 
         st_arr = self.data_obj.applystateScaler(self.true_st_arr.copy())
         condition_arr = self.data_obj.applyconditionScaler(condition_arr)
-        self.st_seq, _, self.condition_seq = self.data_obj.obsSequence(
+        self.st_seq, _, self.condition_seq = self.obsSequence(
                                             st_arr, self.true_target_arr, condition_arr)
 
     def trajCompute(self, traj_n, steps_n):
@@ -200,7 +233,6 @@ class ModelEvaluation():
         seq_shape = obs_seq.shape
         obs_seq.shape = (1, seq_shape[0], seq_shape[1])
         obs_seq = np.repeat(obs_seq, traj_n, axis=0)
-
         conditions = np.array(self.condition_seq[0])
         seq_shape = conditions.shape
         conditions.shape = (1, seq_shape[0], seq_shape[1])
@@ -218,17 +250,20 @@ class ModelEvaluation():
 
         return state_predictions
 
-
 config = loadConfig('series003exp001')
 eval_obj = ModelEvaluation(config)
 
 traj_n = 10
-steps_n = 10
+steps_n = 30
 pred_st = eval_obj.trajCompute(traj_n, steps_n)
 pred_st.shape
+
+# %%
+
+
 # %%
 pred_st.shape
-plt.plot(range(20), eval_obj.true_st_arr[steps_n-1:steps_n*2-1, eval_obj.gen_model.indx_m['vel']], color='red')
+plt.plot(range(steps_n), eval_obj.true_st_arr[19:29, eval_obj.gen_model.indx_m['vel']], color='red')
 
 for n in range(traj_n):
     plt.plot(pred_st[:, n, eval_obj.gen_model.indx_m['vel']], color='grey')
@@ -239,7 +274,6 @@ plt.plot(range(20), eval_obj.true_st_arr[19:39, eval_obj.gen_model.indx_m['pc']]
 for n in range(traj_n):
     plt.plot(pred_st[:, n, eval_obj.gen_model.indx_m['pc']], color='grey')
 # %%
-
 
 
 # %%
