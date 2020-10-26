@@ -19,9 +19,6 @@ reload(utils)
 from models.core.tf_models import cae_model
 reload(cae_model)
 from models.core.tf_models.cae_model import CAE
-
-
-
 class GenModel():
     """TODO:
     - reward (A*state + B*Belief)
@@ -53,11 +50,13 @@ class GenModel():
             i += 1
 
     def get_dx(self, vel_m, vel_o, veh_orientation):
-
+        """
+        veh_orientation is mering vehicle's orientation relative to others
+        """
         if veh_orientation == 'front':
-            dv = vel_o - vel_m
-        else:
             dv = vel_m - vel_o
+        else:
+            dv = vel_o - vel_m
 
         dx = dv*0.1
 
@@ -85,12 +84,12 @@ class GenModel():
         vel_y = st_arr_i[:, self.indx_y['vel']]
         vel_f = st_arr_i[:, self.indx_f['vel']]
         vel_fadj = st_arr_i[:, self.indx_fadj['vel']]
-        st_arr_ii[:, self.indx_y['dx']] = self.get_dx(vel_m, vel_y, 'behind')
-        st_arr_ii[:, self.indx_f['dx']] = self.get_dx(vel_m, vel_f, 'front')
-        st_arr_ii[:, self.indx_fadj['dx']] = self.get_dx(vel_m, vel_fadj, 'front')
+        st_arr_ii[:, self.indx_y['dx']] += self.get_dx(vel_m, vel_y, 'front')
+        st_arr_ii[:, self.indx_f['dx']] += self.get_dx(vel_m, vel_f, 'behind')
+        st_arr_ii[:, self.indx_fadj['dx']] += self.get_dx(vel_m, vel_fadj, 'behind')
 
         st_arr_ii[:, self.indx_m['act_long_p']] = acts_arr_i[:, 0]
-        st_arr_ii[:, self.indx_m['act_lat_p']] =  acts_arr_i[:, 1]
+        st_arr_ii[:, self.indx_m['act_lat_p']] = acts_arr_i[:, 1]
         st_arr_ii[:, self.indx_y['act_long_p']] = acts_arr_i[:, 2]
         st_arr_ii[:, self.indx_f['act_long_p']] = acts_arr_i[:, 3]
         st_arr_ii[:, self.indx_fadj['act_long_p']] = acts_arr_i[:, 4]
@@ -131,7 +130,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-7')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -171,7 +170,8 @@ class ModelEvaluation():
         self.setup() # load data_obj and validation data
         self.policy = MergePolicy(self.data_obj, config)
         self.gen_model = GenModel()
-        self.sceneSetup(episode_id=1289)
+        self.sceneSetup(episode_id=2895)
+        # self.sceneSetup(episode_id=1289)
 
     def setup(self):
         config_names = os.listdir(self.dirName+'config_files')
@@ -250,11 +250,12 @@ class ModelEvaluation():
 
         return state_predictions
 
-config = loadConfig('series003exp001')
+# config = loadConfig('series007exp001')
+config = loadConfig('series003exp002')
 eval_obj = ModelEvaluation(config)
 
 traj_n = 10
-steps_n = 30
+steps_n = 20
 pred_st = eval_obj.trajCompute(traj_n, steps_n)
 pred_st.shape
 
@@ -262,17 +263,37 @@ pred_st.shape
 
 
 # %%
-pred_st.shape
-plt.plot(range(steps_n), eval_obj.true_st_arr[19:29, eval_obj.gen_model.indx_m['vel']], color='red')
+def plot_state(vis_state):
+    plt.plot(range(steps_n), eval_obj.true_st_arr[19:19+steps_n, vis_state], color='red')
 
-for n in range(traj_n):
-    plt.plot(pred_st[:, n, eval_obj.gen_model.indx_m['vel']], color='grey')
+    for n in range(traj_n):
+        plt.plot(pred_st[:, n, vis_state], color='grey')
+    plt.grid()
+    plt.xlabel('steps')
+    plt.ylabel('longitudinal speed [m/s]')
+    plt.title('Merge vehicle trajectory')
+
+vis_state_m = eval_obj.gen_model.indx_m['vel']
+plot_state(vis_state_m)
+plot_state(eval_obj.gen_model.indx_y['vel'])
+plot_state(eval_obj.gen_model.indx_f['vel'])
+plot_state(eval_obj.gen_model.indx_fadj['vel'])
+
+
+
+
 # %%
 pred_st.shape
-plt.plot(range(20), eval_obj.true_st_arr[19:39, eval_obj.gen_model.indx_m['pc']], color='red')
+plt.plot(range(steps_n), eval_obj.true_st_arr[19:19+steps_n, eval_obj.gen_model.indx_m['pc']], color='red')
 
 for n in range(traj_n):
     plt.plot(pred_st[:, n, eval_obj.gen_model.indx_m['pc']], color='grey')
+
+plt.grid()
+plt.xlabel('steps')
+plt.ylabel('pc [m]')
+plt.title('Merge vehicle trajectory')
+
 # %%
 
 
