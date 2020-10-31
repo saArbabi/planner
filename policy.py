@@ -170,8 +170,6 @@ class ModelEvaluation():
         self.setup() # load data_obj and validation data
         self.policy = MergePolicy(self.data_obj, config)
         self.gen_model = GenModel()
-        self.sceneSetup(episode_id=2895)
-        # self.sceneSetup(episode_id=1289)
 
     def setup(self):
         config_names = os.listdir(self.dirName+'config_files')
@@ -228,7 +226,9 @@ class ModelEvaluation():
         self.st_seq, _, self.condition_seq = self.obsSequence(
                                             st_arr, self.true_target_arr, condition_arr)
 
-    def trajCompute(self, traj_n, steps_n):
+    def trajCompute(self, episode_id, traj_n, steps_n):
+        self.sceneSetup(episode_id)
+
         obs_seq = self.st_seq[0]
         seq_shape = obs_seq.shape
         obs_seq.shape = (1, seq_shape[0], seq_shape[1])
@@ -240,7 +240,7 @@ class ModelEvaluation():
 
         # compute actions
         enc_state = self.policy.enc_model(obs_seq)
-        actions = self.policy.get_actions([conditions, enc_state], traj_n, steps_n)
+        actions = self.policy.get_actions([conditions, enc_state, None], traj_n, steps_n)
         # simulate state forward
         state_i = np.repeat([self.true_st_arr[19]], traj_n, axis=0)
         self.gen_model.max_pc = max(self.true_st_arr[:, self.gen_model.indx_m['pc']])
@@ -251,51 +251,55 @@ class ModelEvaluation():
         return state_predictions
 
 # config = loadConfig('series007exp001')
-config = loadConfig('series003exp002')
+config = loadConfig('series015exp003')
 eval_obj = ModelEvaluation(config)
+# episode_id = 2895
+episode_id = 1289
+def vis(episode_id):
+    traj_n = 10
+    steps_n = 40
+    pred_st = eval_obj.trajCompute(episode_id, traj_n, steps_n)
 
-traj_n = 10
-steps_n = 20
-pred_st = eval_obj.trajCompute(traj_n, steps_n)
-pred_st.shape
+    mid_point = 19
+    end_point = 19+steps_n
+    title_info = 'episode_id: ' + str(episode_id) + ' tf%: ' + str(config['model_config']['teacher_percent'])
+    fig, axs = plt.subplots(1, 3, figsize=(15,3))
 
-# %%
-
-
-# %%
-def plot_state(vis_state):
-    plt.plot(range(steps_n), eval_obj.true_st_arr[19:19+steps_n, vis_state], color='red')
+    vis_state = eval_obj.gen_model.indx_m['vel']
+    axs[0].plot(range(end_point), eval_obj.true_st_arr[0:end_point, vis_state], color='red')
 
     for n in range(traj_n):
-        plt.plot(pred_st[:, n, vis_state], color='grey')
-    plt.grid()
-    plt.xlabel('steps')
-    plt.ylabel('longitudinal speed [m/s]')
-    plt.title('Merge vehicle trajectory')
+        axs[0].plot(range(mid_point, end_point), pred_st[:, n, vis_state], color='grey')
+    axs[0].grid()
+    axs[0].set_xlabel('steps')
+    axs[0].set_ylabel('longitudinal speed [m/s]')
+    axs[0].set_title('mveh' + title_info)
 
-vis_state_m = eval_obj.gen_model.indx_m['vel']
-plot_state(vis_state_m)
-plot_state(eval_obj.gen_model.indx_y['vel'])
-plot_state(eval_obj.gen_model.indx_f['vel'])
-plot_state(eval_obj.gen_model.indx_fadj['vel'])
+    vis_state = eval_obj.gen_model.indx_y['vel']
+    axs[1].plot(range(end_point), eval_obj.true_st_arr[0:end_point, vis_state], color='red')
 
+    for n in range(traj_n):
+        axs[1].plot(range(mid_point, end_point), pred_st[:, n, vis_state], color='grey')
+    axs[1].grid()
+    axs[1].set_xlabel('steps')
+    axs[1].set_ylabel('longitudinal speed [m/s]')
+    axs[1].set_title('yveh ' + title_info)
 
+    vis_state_m = eval_obj.gen_model.indx_m['pc']
+    axs[2].plot(range(end_point), eval_obj.true_st_arr[0:end_point, eval_obj.gen_model.indx_m['pc']], color='red')
+    eval_obj.true_st_arr[-1]
+    for n in range(traj_n):
+        axs[2].plot(range(mid_point, end_point), pred_st[:, n, eval_obj.gen_model.indx_m['pc']] , color='grey')
 
+    axs[2].grid()
+    axs[2].set_xlabel('steps')
+    axs[2].set_ylabel('pc [m]')
+    axs[2].set_title('mveh ' + title_info)
 
+    fig.tight_layout()
 # %%
-pred_st.shape
-plt.plot(range(steps_n), eval_obj.true_st_arr[19:19+steps_n, eval_obj.gen_model.indx_m['pc']], color='red')
-
-for n in range(traj_n):
-    plt.plot(pred_st[:, n, eval_obj.gen_model.indx_m['pc']], color='grey')
-
-plt.grid()
-plt.xlabel('steps')
-plt.ylabel('pc [m]')
-plt.title('Merge vehicle trajectory')
-
-# %%
-
+for episode_id in [2895, 1289]:
+    vis(episode_id)
 
 # %%
 # %%
