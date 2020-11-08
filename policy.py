@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from models.core.train_eval.utils import loadConfig
 import json
 import matplotlib.pyplot as plt
@@ -103,18 +102,19 @@ class GenModel():
         - st_arr is unscaled state vector for time_step0
                             shape: ([traj_n, states])
         - acts_arr is unscaled action sequence for pred_horizon
-                            shape:([steps, traj_n, all-actions])
+                            shape:([traj_n, steps, all-actions])
 
         :Return: Predicted future states
         """
-        state_predictions = [st_arr]
+        state_predictions = np.zeros([st_arr.shape[0], steps_n, st_arr.shape[1]])
+        state_predictions[:, 0, :] = st_arr
         state_i = st_arr.copy()
-        for step in range(steps_n-1):
-            st_arr_ii = self.step(state_i, acts_arr[step, :, :])
-            state_predictions.append(st_arr_ii)
+        for step in range(1, steps_n):
+            st_arr_ii = self.step(state_i, acts_arr[:, step, :])
+            state_predictions[:, step, :] = st_arr_ii
             state_i = st_arr_ii
 
-        return np.array(state_predictions)
+        return state_predictions
 
 class MergePolicy():
     def __init__(self, data_obj, config):
@@ -130,19 +130,30 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-7')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
 
-    def get_actions(self, dec_inputs, traj_n, steps_n):
+    def get_actions(self, seq, traj_n, steps_n):
         """
+        :Param: [state_seq, cond_seq], traj_n, steps_n
         :Return: unscaled action array for all cars
         """
+        st_seq, cond_seq = seq
+        # reshape to fit model
+        st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
+        cond_seq.shape = (1, 1, 5)
+        st_seq = np.repeat(st_seq, traj_n, axis=0)
+        cond_seq = np.repeat(cond_seq, traj_n, axis=0)
+
+        # get enc_h state
+        enc_state = self.enc_model(st_seq)
+
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
 
-        gmm_m, gmm_y, gmm_f, gmm_fadj = self.dec_model(dec_inputs)
+        gmm_m, gmm_y, gmm_f, gmm_fadj = self.dec_model([cond_seq, enc_state])
         total_acts_count = traj_n*steps_n
         veh_acts_count = 5 # 2 for merging, 1 for each of the other cars
 
@@ -160,7 +171,7 @@ class MergePolicy():
         scaled_acts = self.data_obj.apply_InvScaler(unscaled_acts)
         scaled_acts.shape = (traj_n, steps_n, veh_acts_count)
 
-        return np.stack(scaled_acts, axis=1) # shape: [steps, traj_n, all-actions]
+        return scaled_acts
 
 class ModelEvaluation():
     dirName = './datasets/preprocessed/'
@@ -170,8 +181,12 @@ class ModelEvaluation():
         self.setup() # load data_obj and validation data
         self.policy = MergePolicy(self.data_obj, config)
         self.gen_model = GenModel()
+        self.episode_n = 5
+        self.steps_n = 40
+        self.traj_n = 10
 
     def setup(self):
+        self.test_episodes = np.loadtxt('./datasets/test_episodes.csv', delimiter=',')
         config_names = os.listdir(self.dirName+'config_files')
         for config_name in config_names:
             with open(self.dirName+'config_files/'+config_name, 'r') as f:
@@ -182,114 +197,156 @@ class ModelEvaluation():
                     self.data_obj = dill.load(f, ignore=True)
 
                 with open(self.dirName+config_name[:-5]+'/'+'states_test', 'rb') as f:
-                    self.states_test = pickle.load(f)
+                    self.states_set = pickle.load(f)
 
                 with open(self.dirName+config_name[:-5]+'/'+'targets_test', 'rb') as f:
-                    self.targets_test = pickle.load(f)
+                    self.targets_set = pickle.load(f)
 
                 with open(self.dirName+config_name[:-5]+'/'+'conditions_test', 'rb') as f:
-                    self.conditions_test = pickle.load(f)
+                    self.conditions_set = pickle.load(f)
 
-    def obsSequence(self, state_arr, target_arr, condition_arr):
-        state_seq = []
-        target_seq = []
-        condition_seq = []
+    def obsSequence(self, st_arr, cond_arr):
+        st_arr = self.data_obj.applystateScaler(st_arr)
+        cond_arr = self.data_obj.applyconditionScaler(cond_arr)
+
+        st_seq = {}
+        cond_seq = {}
 
         step_size = 1
-        pred_horizon = 20
-        obsSequence_n = 20
         i_reset = 0
         i = 0
         for chunks in range(step_size):
-            prev_states = deque(maxlen=obsSequence_n)
-            while i < (len(state_arr)-2):
-                # 2 is minimum prediction horizon
-                prev_states.append(state_arr[i])
-                if len(prev_states) == obsSequence_n:
-                    state_seq.append(np.array(prev_states))
-                    target_seq.append(target_arr[i:i+pred_horizon].tolist())
-                    condition_seq.append(condition_arr[i:i+pred_horizon].tolist())
+            prev_states = deque(maxlen=self.data_obj.obsSequence_n)
+            while i < (len(st_arr)-self.steps_n):
+                prev_states.append(st_arr[i])
+                if len(prev_states) == self.data_obj.obsSequence_n:
+                    # i is used as a key for retrieving corresponding true targets
+                    st_seq[i] = np.array(prev_states)
+                    cond_seq[i] = cond_arr[i:i+1]
 
                 i += step_size
             i_reset += 1
             i = i_reset
 
-        return state_seq, target_seq, condition_seq
+        return st_seq, cond_seq
 
     def sceneSetup(self, episode_id):
-        self.true_st_arr = self.states_test[self.states_test[:, 0] == episode_id][:, 1:]
-        self.true_target_arr = self.targets_test[self.targets_test[:, 0] == episode_id][:, 1:]
-        condition_arr = self.conditions_test[self.conditions_test[:, 0] == episode_id][:, 1:]
+        """:Return: All info needed for evaluating model on a given scene
+        """
+        st_arr = self.states_set[self.states_set[:, 0] == episode_id][:, 1:]
+        targ_arr = self.targets_set[self.targets_set[:, 0] == episode_id][:, 1:]
+        cond_arr = self.conditions_set[self.conditions_set[:, 0] == episode_id][:, 1:]
+        st_seq, cond_seq = self.obsSequence(st_arr.copy(), cond_arr.copy())
 
-        st_arr = self.data_obj.applystateScaler(self.true_st_arr.copy())
-        condition_arr = self.data_obj.applyconditionScaler(condition_arr)
-        self.st_seq, _, self.condition_seq = self.obsSequence(
-                                            st_arr, self.true_target_arr, condition_arr)
+        return st_seq, cond_seq, st_arr, targ_arr
 
-    def trajCompute(self, episode_id, traj_n, steps_n):
-        self.sceneSetup(episode_id)
+    def sqrt_square(self, vehact_indx, true_traj, pred_trajs):
+        err = np.sqrt(np.square(pred_trajs[:, :, vehact_indx] - true_traj[:, :, vehact_indx]))
+        return err
 
-        obs_seq = self.st_seq[0]
-        seq_shape = obs_seq.shape
-        obs_seq.shape = (1, seq_shape[0], seq_shape[1])
-        obs_seq = np.repeat(obs_seq, traj_n, axis=0)
-        conditions = np.array(self.condition_seq[0])
-        seq_shape = conditions.shape
-        conditions.shape = (1, seq_shape[0], seq_shape[1])
-        conditions = np.repeat(conditions, traj_n, axis=0)
+    def trajCompute(self, episode_id):
+        st_seq, cond_seq, st_arr, targ_arr = self.sceneSetup(episode_id)
+        actions = self.policy.get_actions([st_seq[19], cond_seq[19]],
+                                                    self.traj_n, self.steps_n)
 
-        # compute actions
-        enc_state = self.policy.enc_model(obs_seq)
-        actions = self.policy.get_actions([conditions, enc_state, None], traj_n, steps_n)
         # simulate state forward
-        state_i = np.repeat([self.true_st_arr[19]], traj_n, axis=0)
-        self.gen_model.max_pc = max(self.true_st_arr[:, self.gen_model.indx_m['pc']])
-        self.gen_model.min_pc = min(self.true_st_arr[:, self.gen_model.indx_m['pc']])
-        state_predictions = self.gen_model.forwardSim(state_i, actions, steps_n)
-        # get xy poses for mveh
+        state_i = np.repeat([st_arr[19, :]], self.traj_n, axis=0)
+        self.gen_model.max_pc = max(st_arr[:, self.gen_model.indx_m['pc']])
+        self.gen_model.min_pc = min(st_arr[:, self.gen_model.indx_m['pc']])
+        state_predictions = self.gen_model.forwardSim(state_i.copy(), actions, self.steps_n)
+        state_true = st_arr[0:19+self.steps_n]
+        return state_true, state_predictions
 
-        return state_predictions
+    def compute_rwse(self):
+        """
+        dumps dict into exp folder containing RWSE for all vehicle actions across time.
+        """
+        err_arrs = [np.zeros([self.episode_n*6, self.steps_n]) for i in range(5)]
+        err_row = 0
 
+        for episode_id in self.test_episodes[:self.episode_n]:
+            st_seq, cond_seq, _, targ_arr = self.sceneSetup(episode_id)
+            traj_splits = np.random.choice(list(st_seq.keys()), 6, replace=False)
+
+            for split in traj_splits:
+
+                st_seq_i = st_seq[split]
+                cond_seq_i = cond_seq[split]
+                true_arr_i = targ_arr[split:split+self.steps_n, :]
+                true_arr_i.shape = (1, self.steps_n, 5)
+                actions = self.policy.get_actions([st_seq_i, cond_seq_i],
+                                                        self.traj_n, self.steps_n)
+                for vehact_indx in range(5):
+                    # veh_mlong, veh_mlat, veh_y, veh_f, veh_fadj
+                    err = self.sqrt_square(vehact_indx, true_arr_i, actions)
+                    err_arrs[vehact_indx][err_row, :] = np.mean(err, axis=0)
+                err_row += 1
+
+        return [np.mean(err_arr, axis=0) for err_arr in err_arrs]
+
+# %%
+
+
+# a = np.array([[2,4,6], [3,5,7]])
+# b = np.array([1,1,1])
+#
+# a-b
+config = loadConfig('series020exp001')
+eval_obj = ModelEvaluation(config)
+state_true, state_predictions = eval_obj.trajCompute(2895)
+
+# %%
+err_arrs = eval_obj.compute_rwse()
+for i in range(5):
+    plt.plot(err_arrs[i])
+plt.legend([1,2,3,4,5])
+
+# %%
+
+
+
+# %%
+# %%
+
+
+# %%
 # config = loadConfig('series007exp001')
-config = loadConfig('series015exp003')
+config = loadConfig('series020exp003')
 eval_obj = ModelEvaluation(config)
 # episode_id = 2895
-episode_id = 1289
 def vis(episode_id):
-    traj_n = 10
-    steps_n = 40
-    pred_st = eval_obj.trajCompute(episode_id, traj_n, steps_n)
+    state_true, state_predictions = eval_obj.trajCompute(episode_id)
 
     mid_point = 19
-    end_point = 19+steps_n
-    title_info = 'episode_id: ' + str(episode_id) + ' tf%: ' + str(config['model_config']['teacher_percent'])
+    end_point = 19+eval_obj.steps_n
+    title_info = 'episode_id: ' + str(episode_id) + ' max_err: ' + str(config['model_config']['allowed_error'])
     fig, axs = plt.subplots(1, 3, figsize=(15,3))
 
     vis_state = eval_obj.gen_model.indx_m['vel']
-    axs[0].plot(range(end_point), eval_obj.true_st_arr[0:end_point, vis_state], color='red')
+    axs[0].plot(range(end_point), state_true[0:end_point, vis_state], color='red')
 
-    for n in range(traj_n):
-        axs[0].plot(range(mid_point, end_point), pred_st[:, n, vis_state], color='grey')
+    for n in range(eval_obj.traj_n):
+        axs[0].plot(range(mid_point, end_point), state_predictions[n, :, vis_state], color='grey')
     axs[0].grid()
     axs[0].set_xlabel('steps')
     axs[0].set_ylabel('longitudinal speed [m/s]')
     axs[0].set_title('mveh' + title_info)
 
     vis_state = eval_obj.gen_model.indx_y['vel']
-    axs[1].plot(range(end_point), eval_obj.true_st_arr[0:end_point, vis_state], color='red')
+    axs[1].plot(range(end_point), state_true[0:end_point, vis_state], color='red')
 
-    for n in range(traj_n):
-        axs[1].plot(range(mid_point, end_point), pred_st[:, n, vis_state], color='grey')
+    for n in range(eval_obj.traj_n):
+        axs[1].plot(range(mid_point, end_point), state_predictions[n, :, vis_state], color='grey')
     axs[1].grid()
     axs[1].set_xlabel('steps')
     axs[1].set_ylabel('longitudinal speed [m/s]')
     axs[1].set_title('yveh ' + title_info)
 
     vis_state_m = eval_obj.gen_model.indx_m['pc']
-    axs[2].plot(range(end_point), eval_obj.true_st_arr[0:end_point, eval_obj.gen_model.indx_m['pc']], color='red')
-    eval_obj.true_st_arr[-1]
-    for n in range(traj_n):
-        axs[2].plot(range(mid_point, end_point), pred_st[:, n, eval_obj.gen_model.indx_m['pc']] , color='grey')
+    axs[2].plot(range(end_point), state_true[0:end_point, eval_obj.gen_model.indx_m['pc']], color='red')
+    state_true[-1]
+    for n in range(eval_obj.traj_n):
+        axs[2].plot(range(mid_point, end_point), state_predictions[n, :, eval_obj.gen_model.indx_m['pc']] , color='grey')
 
     axs[2].grid()
     axs[2].set_xlabel('steps')
@@ -297,11 +354,13 @@ def vis(episode_id):
     axs[2].set_title('mveh ' + title_info)
 
     fig.tight_layout()
-# %%
+
 for episode_id in [2895, 1289]:
     vis(episode_id)
 
+
 # %%
+ckpt
 # %%
 """State plots
 """
