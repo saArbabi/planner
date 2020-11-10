@@ -117,9 +117,9 @@ class GenModel():
         return state_predictions
 
 class MergePolicy():
-    def __init__(self, data_obj, config):
-        self.data_obj = data_obj
+    def __init__(self, config):
         self.loadModel(config)
+        self.test_data = TestdataObj(config)
 
         # TODO:
         # objective function/ evaluate function/ set execution time, which will
@@ -130,7 +130,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-7')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -168,31 +168,24 @@ class MergePolicy():
             unscaled_acts[:, i] = veh_acts
             i += 1
 
-        scaled_acts = self.data_obj.apply_InvScaler(unscaled_acts)
+        scaled_acts = test_data.data_obj.apply_InvScaler(unscaled_acts)
         scaled_acts.shape = (traj_n, steps_n, veh_acts_count)
 
         return scaled_acts
 
-class ModelEvaluation():
+class TestdataObj():
     dirName = './datasets/preprocessed/'
-
     def __init__(self, config):
-        self.data_config = config['data_config']
-        self.setup() # load data_obj and validation data
-        self.policy = MergePolicy(self.data_obj, config)
-        self.gen_model = GenModel()
-        self.episode_n = 5
-        self.steps_n = 40
-        self.traj_n = 10
+        self.setup(config['data_config']) # load test_data and validation data
 
-    def setup(self):
+    def setup(self, data_config):
         self.test_episodes = np.loadtxt('./datasets/test_episodes.csv', delimiter=',')
         config_names = os.listdir(self.dirName+'config_files')
         for config_name in config_names:
             with open(self.dirName+'config_files/'+config_name, 'r') as f:
                 config = json.load(f)
 
-            if config == self.data_config:
+            if config == data_config:
                 with open(self.dirName+config_name[:-5]+'/'+'data_obj', 'rb') as f:
                     self.data_obj = dill.load(f, ignore=True)
 
@@ -205,68 +198,85 @@ class ModelEvaluation():
                 with open(self.dirName+config_name[:-5]+'/'+'conditions_test', 'rb') as f:
                     self.conditions_set = pickle.load(f)
 
-    def obsSequence(self, st_arr, cond_arr):
-        st_arr = self.data_obj.applystateScaler(st_arr)
-        cond_arr = self.data_obj.applyconditionScaler(cond_arr)
+
+class ModelEvaluation():
+    def __init__(self, model, config):
+        self.policy = model
+        self.test_data = TestdataObj(config)
+        self.gen_model = GenModel()
+        self.episode_n = 50
+        self.steps_n = 40
+        self.traj_n = 20
+        self.dirName = './models/experiments/'+config['exp_id']
+
+    def obsSequence(self, st_arr, cond_arr, test_data):
+        st_arr = test_data.data_obj.applystateScaler(st_arr)
+        cond_arr = test_data.data_obj.applyconditionScaler(cond_arr)
 
         st_seq = {}
         cond_seq = {}
 
-        step_size = 1
         i_reset = 0
         i = 0
-        for chunks in range(step_size):
-            prev_states = deque(maxlen=self.data_obj.obsSequence_n)
+        for chunks in range(test_data.data_obj.step_size):
+            prev_states = deque(maxlen=test_data.data_obj.obsSequence_n)
             while i < (len(st_arr)-self.steps_n):
                 prev_states.append(st_arr[i])
-                if len(prev_states) == self.data_obj.obsSequence_n:
+                if len(prev_states) == test_data.data_obj.obsSequence_n:
                     # i is used as a key for retrieving corresponding true targets
                     st_seq[i] = np.array(prev_states)
                     cond_seq[i] = cond_arr[i:i+1]
 
-                i += step_size
+                i += test_data.data_obj.step_size
             i_reset += 1
             i = i_reset
 
         return st_seq, cond_seq
 
-    def sceneSetup(self, episode_id):
+    def sceneSetup(self, episode_id, test_data):
         """:Return: All info needed for evaluating model on a given scene
         """
-        st_arr = self.states_set[self.states_set[:, 0] == episode_id][:, 1:]
-        targ_arr = self.targets_set[self.targets_set[:, 0] == episode_id][:, 1:]
-        cond_arr = self.conditions_set[self.conditions_set[:, 0] == episode_id][:, 1:]
-        st_seq, cond_seq = self.obsSequence(st_arr.copy(), cond_arr.copy())
+        st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
+        targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
+        cond_arr = test_data.conditions_set[test_data.conditions_set[:, 0] == episode_id][:, 1:]
+        st_seq, cond_seq = self.obsSequence(st_arr.copy(), cond_arr.copy(), test_data)
 
         return st_seq, cond_seq, st_arr, targ_arr
 
-    def sqrt_square(self, vehact_indx, true_traj, pred_trajs):
-        err = np.sqrt(np.square(pred_trajs[:, :, vehact_indx] - true_traj[:, :, vehact_indx]))
+    def root_weightet_sqr(self, true_traj, pred_trajs):
+        err = np.sqrt(np.mean(np.square(true_traj-pred_trajs), axis=0))
         return err
 
     def trajCompute(self, episode_id):
-        st_seq, cond_seq, st_arr, targ_arr = self.sceneSetup(episode_id)
-        actions = self.policy.get_actions([st_seq[19], cond_seq[19]],
+        st_seq, cond_seq, st_arr, targ_arr = self.sceneSetup(episode_id, self.test_data)
+        actions = self.policy.get_actions([st_seq[29].copy(), cond_seq[29].copy()],
                                                     self.traj_n, self.steps_n)
 
         # simulate state forward
-        state_i = np.repeat([st_arr[19, :]], self.traj_n, axis=0)
+        state_i = np.repeat([st_arr[29, :]], self.traj_n, axis=0)
         self.gen_model.max_pc = max(st_arr[:, self.gen_model.indx_m['pc']])
         self.gen_model.min_pc = min(st_arr[:, self.gen_model.indx_m['pc']])
         state_predictions = self.gen_model.forwardSim(state_i.copy(), actions, self.steps_n)
-        state_true = st_arr[0:19+self.steps_n]
+        state_true = st_arr[0:29+self.steps_n]
         return state_true, state_predictions
 
     def compute_rwse(self):
         """
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
-        err_arrs = [np.zeros([self.episode_n*6, self.steps_n]) for i in range(5)]
-        err_row = 0
+        rwse_dict = {'m_long':0, 'm_lat':1, 'y_long':2, 'f_long':3, 'fadj_long':4}
+        pred_arrs = [np.zeros([self.episode_n*self.traj_n*6, self.steps_n]) for i in range(5)]
+        truth_arrs = [np.zeros([self.episode_n*self.traj_n*6, self.steps_n]) for i in range(5)]
+        _row = 0
 
-        for episode_id in self.test_episodes[:self.episode_n]:
-            st_seq, cond_seq, _, targ_arr = self.sceneSetup(episode_id)
-            traj_splits = np.random.choice(list(st_seq.keys()), 6, replace=False)
+        for episode_id in self.test_data.test_episodes[:self.episode_n]:
+            st_seq, cond_seq, _, targ_arr = self.sceneSetup(episode_id, self.test_data)
+            if len(st_seq) > 6:
+                splits_n = 6
+            else:
+                splits_n = len(st_seq)
+
+            traj_splits = np.random.choice(list(st_seq.keys()), splits_n, replace=False)
 
             for split in traj_splits:
 
@@ -274,15 +284,80 @@ class ModelEvaluation():
                 cond_seq_i = cond_seq[split]
                 true_arr_i = targ_arr[split:split+self.steps_n, :]
                 true_arr_i.shape = (1, self.steps_n, 5)
-                actions = self.policy.get_actions([st_seq_i, cond_seq_i],
+                actions = self.policy.get_actions([st_seq_i.copy(), cond_seq_i.copy()],
                                                         self.traj_n, self.steps_n)
+
                 for vehact_indx in range(5):
                     # veh_mlong, veh_mlat, veh_y, veh_f, veh_fadj
-                    err = self.sqrt_square(vehact_indx, true_arr_i, actions)
-                    err_arrs[vehact_indx][err_row, :] = np.mean(err, axis=0)
-                err_row += 1
+                    truth_arrs[vehact_indx][_row:_row+self.traj_n, :] = true_arr_i[:,:,vehact_indx]
+                    pred_arrs[vehact_indx][_row:_row+self.traj_n, :] = actions[:,:,vehact_indx]
+                _row += self.traj_n
 
-        return [np.mean(err_arr, axis=0) for err_arr in err_arrs]
+        for key in rwse_dict.keys():
+            rwse_dict[key] = self.root_weightet_sqr(truth_arrs[rwse_dict[key]], \
+                                                        pred_arrs[rwse_dict[key]])
+
+
+        with open(self.dirName+'/rwse', "wb") as f:
+            pickle.dump(rwse_dict, f)
+
+config = loadConfig('series022exp003')
+test_data = TestdataObj(config)
+model = MergePolicy(config)
+eval_obj = ModelEvaluation(model, config)
+
+# %%
+# eval_obj.compute_rwse()
+
+
+# %%
+exp_list = ['series022exp001', 'series022exp002', 'series022exp003']
+rwse_exp = {}
+for exp in exp_list:
+    dirName = './models/experiments/'+exp
+    with open(dirName+'/'+'rwse', 'rb') as f:
+        rwse_exp[exp] = dill.load(f, ignore=True)
+
+# %%
+
+for exp in exp_list:
+    plt.plot(rwse_exp[exp]['m_long'])
+plt.legend(exp_list)
+# %%
+split = 19
+for split in range(19, 35):
+    plt.figure()
+    actions = eval_obj.policy.get_actions([st_seq[split].copy(), cond_seq[split].copy()], 5, 30)
+    plt.plot(targ_arr[split:split+30 ,0])
+    for traj in actions[:,:,0]:
+        plt.plot(traj)
+
+
+# %%
+pred_arrs, truth_arrs = eval_obj.compute_rwse()
+
+pred_arrs[0][0:2].shape
+plt.plot(pred_arrs[0][3,:])
+plt.plot(truth_arrs[0][1,:])
+
+# %%
+_row = 0
+
+for _traj in range(18):
+    plt.figure()
+    plt.title(str(_traj+1))
+
+    for sample_traj in range(_traj, _traj+2):
+        plt.plot(pred_arrs[0][_row,:])
+        _row += 1
+    plt.grid()
+    plt.plot(truth_arrs[0][_traj,:])
+
+# %%
+plt.plot(err_arrs['m_long'])
+
+plt.plot(err_arrs['y_long'])
+plt.plot(err_arrs['f_long'])
 
 # %%
 
@@ -291,9 +366,9 @@ class ModelEvaluation():
 # b = np.array([1,1,1])
 #
 # a-b
-config = loadConfig('series020exp001')
-eval_obj = ModelEvaluation(config)
-state_true, state_predictions = eval_obj.trajCompute(2895)
+# config = loadConfig('series020exp001')
+# eval_obj = ModelEvaluation(config)
+# state_true, state_predictions = eval_obj.trajCompute(2895)
 
 # %%
 err_arrs = eval_obj.compute_rwse()
@@ -302,23 +377,35 @@ for i in range(5):
 plt.legend([1,2,3,4,5])
 
 # %%
+np.linspace()
+
+discount_factor = 0.9
+np.power(discount_factor, np.array(range(1,20)))
 
 
 
 # %%
+def choose_traj(self):
+    """
+    Select best trajectory according to the following metrics:
+    - TTC
+    - Jerk (mveh and yveh combined)
+    - Goal deviation (terminal?)
+
+
+    """
 # %%
 
 
 # %%
 # config = loadConfig('series007exp001')
-config = loadConfig('series020exp003')
-eval_obj = ModelEvaluation(config)
+
 # episode_id = 2895
 def vis(episode_id):
     state_true, state_predictions = eval_obj.trajCompute(episode_id)
 
-    mid_point = 19
-    end_point = 19+eval_obj.steps_n
+    mid_point = 29
+    end_point = 29+eval_obj.steps_n
     title_info = 'episode_id: ' + str(episode_id) + ' max_err: ' + str(config['model_config']['allowed_error'])
     fig, axs = plt.subplots(1, 3, figsize=(15,3))
 
