@@ -12,7 +12,7 @@ from collections import deque
 
 from models.core.tf_models import utils
 reload(utils)
-
+ 
 # %%
 
 from models.core.tf_models import cae_model
@@ -205,8 +205,8 @@ class ModelEvaluation():
         self.test_data = TestdataObj(config)
         self.gen_model = GenModel()
         self.episode_n = 50
-        self.steps_n = 40
-        self.traj_n = 20
+        self.steps_n = 30
+        self.traj_n = 10
         self.dirName = './models/experiments/'+config['exp_id']
 
     def obsSequence(self, st_arr, cond_arr, test_data):
@@ -301,11 +301,12 @@ class ModelEvaluation():
         with open(self.dirName+'/rwse', "wb") as f:
             pickle.dump(rwse_dict, f)
 
-config = loadConfig('series022exp003')
+config = loadConfig('series025exp001')
 test_data = TestdataObj(config)
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
-
+for episode_id in [2895, 1289]:
+    vis(episode_id)
 # %%
 # eval_obj.compute_rwse()
 
@@ -324,8 +325,8 @@ for exp in exp_list:
     plt.plot(rwse_exp[exp]['m_long'])
 plt.legend(exp_list)
 # %%
-split = 19
-for split in range(19, 35):
+split = 29
+for split in range(29, 35):
     plt.figure()
     actions = eval_obj.policy.get_actions([st_seq[split].copy(), cond_seq[split].copy()], 5, 30)
     plt.plot(targ_arr[split:split+30 ,0])
@@ -442,8 +443,7 @@ def vis(episode_id):
 
     fig.tight_layout()
 
-for episode_id in [2895, 1289]:
-    vis(episode_id)
+
 
 
 # %%
