@@ -9,10 +9,11 @@ import pickle
 import tensorflow as tf
 import dill
 from collections import deque
+from scipy.interpolate import CubicSpline
 
 from models.core.tf_models import utils
 reload(utils)
- 
+
 # %%
 
 from models.core.tf_models import cae_model
@@ -130,7 +131,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-6')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -143,15 +144,18 @@ class MergePolicy():
         st_seq, cond_seq = seq
         # reshape to fit model
         st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
-        cond_seq.shape = (1, 1, 5)
+        for n in range(5):
+            cond_seq[n].shape = (1, 4, 4)
+            cond_seq[n] = np.repeat(cond_seq[n], traj_n, axis=0)
+
         st_seq = np.repeat(st_seq, traj_n, axis=0)
-        cond_seq = np.repeat(cond_seq, traj_n, axis=0)
 
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
+        self.dec_model.coef_scaler = self.test_data.data_obj.coef_scaler
 
         gmm_m, gmm_y, gmm_f, gmm_fadj = self.dec_model([cond_seq, enc_state])
         total_acts_count = traj_n*steps_n
@@ -195,10 +199,6 @@ class TestdataObj():
                 with open(self.dirName+config_name[:-5]+'/'+'targets_test', 'rb') as f:
                     self.targets_set = pickle.load(f)
 
-                with open(self.dirName+config_name[:-5]+'/'+'conditions_test', 'rb') as f:
-                    self.conditions_set = pickle.load(f)
-
-
 class ModelEvaluation():
     def __init__(self, model, config):
         self.policy = model
@@ -209,37 +209,62 @@ class ModelEvaluation():
         self.traj_n = 10
         self.dirName = './models/experiments/'+config['exp_id']
 
-    def obsSequence(self, st_arr, cond_arr, test_data):
-        st_arr = test_data.data_obj.applystateScaler(st_arr)
-        cond_arr = test_data.data_obj.applyconditionScaler(cond_arr)
+    def obsSequence(self, state_arr, target_arr):
+        state_arr = self.test_data.data_obj.applystateScaler(state_arr)
 
-        st_seq = {}
-        cond_seq = {}
+        actions = [target_arr[:, n] for n in range(5)]
+        traj_len = len(state_arr)
+        snip_n = 5
+        states = []
+        targs = [[],[],[],[],[]]
+        conds = [[],[],[],[],[]]
 
-        i_reset = 0
-        i = 0
-        for chunks in range(test_data.data_obj.step_size):
-            prev_states = deque(maxlen=test_data.data_obj.obsSequence_n)
-            while i < (len(st_arr)-self.steps_n):
-                prev_states.append(st_arr[i])
-                if len(prev_states) == test_data.data_obj.obsSequence_n:
-                    # i is used as a key for retrieving corresponding true targets
-                    st_seq[i] = np.array(prev_states)
-                    cond_seq[i] = cond_arr[i:i+1]
+        for n in range(5):
+            coeffs = np.empty([traj_len-snip_n, 4]) # number of splines = knots_n - 1
+            coeffs[:] = np.nan
 
-                i += test_data.data_obj.step_size
-            i_reset += 1
-            i = i_reset
+            for i in range(snip_n):
+                indx = []
+                indx.extend(np.arange(i, traj_len, snip_n))
+                traj_snippets = actions[n][indx]
+                f = CubicSpline(indx, traj_snippets)
+                coeffs[indx[:-1], :] = np.stack(f.c, axis=1)[:,:] # number of splines = knots_n - 1
 
-        return st_seq, cond_seq
+            coeffs = coeffs.tolist()
+            for i in range(traj_len):
+                end_indx = i + self.test_data.data_obj.obs_n - 1
+                targ_indx = [end_indx+(snip_n)*n for n in range(self.test_data.data_obj.pred_h)]
+                targ_indx = [num for num in targ_indx if num < len(coeffs)]
 
-    def sceneSetup(self, episode_id, test_data):
+                if len(targ_indx) == 4:
+                    cond_indx = [end_indx-snip_n]
+                    cond_indx.extend(targ_indx[:-1])
+                    targs[n].append([coeffs[num][0:1] for num in targ_indx])
+                    conds[n].append([coeffs[num] for num in cond_indx])
+
+                    if n == 0:
+                        states.append(state_arr[i:(i + self.test_data.data_obj.obs_n), :].tolist())
+                else:
+                    break
+
+        conds = [np.array(conds[n]) for n in range(5)]
+        for n in range(5):
+            # 5 actions
+            if n == 1:
+                max = self.test_data.data_obj.coef_scaler['lat']
+            else:
+                max = self.test_data.data_obj.coef_scaler['long']
+
+            conds[n][:,:,:] = conds[n][:,:,:]/max
+
+        return np.array(states), conds
+
+    def sceneSetup(self, episode_id):
         """:Return: All info needed for evaluating model on a given scene
         """
-        st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
-        targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
-        cond_arr = test_data.conditions_set[test_data.conditions_set[:, 0] == episode_id][:, 1:]
-        st_seq, cond_seq = self.obsSequence(st_arr.copy(), cond_arr.copy(), test_data)
+        st_arr = self.test_data.states_set[self.test_data.states_set[:, 0] == episode_id][:, 1:]
+        targ_arr = self.test_data.targets_set[self.test_data.targets_set[:, 0] == episode_id][:, 1:]
+        st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy())
 
         return st_seq, cond_seq, st_arr, targ_arr
 
@@ -301,10 +326,37 @@ class ModelEvaluation():
         with open(self.dirName+'/rwse', "wb") as f:
             pickle.dump(rwse_dict, f)
 
-config = loadConfig('series025exp001')
+config = loadConfig('series026exp001')
 test_data = TestdataObj(config)
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
+cond_seq[0][0,:,:].shape
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
+actions = eval_obj.policy.get_actions([st_seq[0,:,:],
+                                [cond_seq[n][0,:,:] for n in range(5)]], 5, 4)
+
+
+# %%
+coefficients = [1.0, 2.5, 0.0, -4.2]
+x = 5.0
+y = tf.math.polyval(coefficients, x)
+y
+
+a = tf.constant([1,2,3,4,5])
+b = [a[n] for n in range(3)]
+b
+# %%
+coefficients = [1.0, 2.5, -4.2]
+x = 5.0
+y = tf.math.polyval(coefficients, x)
+y
+
+# %%
+x = 5.0
+y = tf.math.polyval(coefficients, x)
+y
+
+# %%
 for episode_id in [2895, 1289]:
     vis(episode_id)
 # %%
