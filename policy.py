@@ -130,24 +130,22 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-1')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-4')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
 
 
-    def get_actions(self, seq, traj_n, steps_n):
+    def get_actions(self, seq, bc_der, traj_n, pred_h):
         """
-        :Param: [state_seq, cond_seq], traj_n, steps_n
+        :Param: [state_seq, cond_seq], bc_der, traj_n, pred_h(s)
         :Return: unscaled action array for all cars
         """
         st_seq, cond_seq = seq
         # reshape to fit model
         st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
 
-        cond_seq[0].shape = (1, 4, 2)
-        cond_seq[0] = np.repeat(cond_seq[0], traj_n, axis=0)
-        for n in range(1, 4):
+        for n in range(5):
             cond_seq[n].shape = (1, 4, 1)
             cond_seq[n] = np.repeat(cond_seq[n], traj_n, axis=0)
 
@@ -156,38 +154,54 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
+        skip_n = 4 # done for a smoother trajectory
+        step_len = round(skip_n*test_data.data_obj.step_size*0.1, 1) # [s]
+        steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(test_data.data_obj.step_size*0.1)))
+
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
 
-        gmm_m, gmm_y, gmm_f, gmm_fadj = self.dec_model([cond_seq, enc_state])
+        act_mlon, act_mlat, act_y, act_f, act_fadj = self.dec_model([cond_seq, enc_state])
         total_acts_count = traj_n*steps_n
         veh_acts_count = 5 # 2 for merging, 1 for each of the other cars
-
         scaled_acts = np.zeros([total_acts_count, veh_acts_count])
-        veh_acts = gmm_m.sample().numpy()
-        veh_acts.shape = (total_acts_count, 2)
-        i = 2
-        scaled_acts[:, 0:i] = veh_acts
-        for gmm in [gmm_y, gmm_f, gmm_fadj]:
-            veh_acts = gmm.sample().numpy()
-            veh_acts.shape = (total_acts_count)
-            scaled_acts[:, i] = veh_acts
+        i = 0
+        actions = [act_.numpy() for act_ in [act_mlon, act_mlat, act_y, act_f, act_fadj]]
+        for act_ in actions:
+            act_.shape = (total_acts_count)
+            scaled_acts[:, i] = act_
+
             i += 1
 
         unscaled_acts = test_data.data_obj.action_scaler.inverse_transform(scaled_acts)
         unscaled_acts.shape = (traj_n, steps_n, veh_acts_count)
 
         # conditional at the first step - used for vis
-        cond0 = [cond_seq[n][0, 0, :].tolist() for n in range(4)]
+        cond0 = [cond_seq[n][0, 0, :].tolist() for n in range(5)]
         cond0 = np.array([item for sublist in cond0 for item in sublist])
-        print(cond0.shape)
         cond0 = test_data.data_obj.action_scaler.inverse_transform(np.reshape(cond0, [1,-1]))
         cond0.shape = (1, 1, 5)
         cond0 = np.repeat(cond0, traj_n, axis=0)
-
         unscaled_acts = np.concatenate([cond0, unscaled_acts], axis=1)
 
-        return unscaled_acts
+        # spline fitting
+        actions = unscaled_acts[:,0::skip_n,:]
+        traj_len = steps_n*test_data.data_obj.step_size*0.1 # [s]
+        trajectories = np.zeros([traj_n, int(traj_len*10)+1, 5])
+        step_up = int(step_len*10)+1
+
+        for act_n in range(5):
+            for trj in range(traj_n):
+                x = np.arange(0, traj_len+0.1, step_len)
+                f = CubicSpline(x, actions[trj,:,act_n], bc_type=((1, bc_der[act_n]), (2, 0)))
+                coefs = np.stack(f.c, axis=1)
+                x = np.arange(0, step_len+0.1, 0.1)
+                pointer = 0
+                for c in coefs:
+                    trajectories[trj,  pointer:pointer+step_up, act_n] = np.poly1d(c)(x)
+                    pointer += step_up-1
+
+        return trajectories[:, 0:pred_h*10,:]
 
 class TestdataObj():
     dirName = './datasets/preprocessed/'
@@ -217,20 +231,18 @@ class ModelEvaluation():
         self.test_data = TestdataObj(config)
         self.gen_model = GenModel()
         self.episode_n = 50
-        self.steps_n = 4
         self.traj_n = 10
         self.dirName = './models/experiments/'+config['exp_id']
 
     def obsSequence(self, state_arr, target_arr):
         state_arr = test_data.data_obj.applyStateScaler(state_arr)
         target_arr = test_data.data_obj.applyActionScaler(target_arr)
-        actions = [target_arr[:, 0:2]]
-        actions.extend([target_arr[:, n:n+1] for n in range(2, 5)])
+        actions = [target_arr[:, n:n+1] for n in range(5)]
         traj_len = len(state_arr)
         snip_n = 5
 
         obs_n = test_data.data_obj.obs_n
-        pred_h = self.steps_n
+        pred_h = 4 # only the fist step conditional is needed
         conds = [[],[],[],[],[]]
         states = []
 
@@ -246,10 +258,10 @@ class ModelEvaluation():
                         break
 
                     states.append(np.array(prev_states))
-                    for n in range(4):
+                    for n in range(5):
                         conds[n].append(actions[n][indx[:-1]])
 
-        return np.array(states),  [np.array(conds[n]) for n in range(4)]
+        return np.array(states),  [np.array(conds[n]) for n in range(5)]
 
     def sceneSetup(self, episode_id):
         """:Return: All info needed for evaluating model on a given scene
@@ -258,7 +270,7 @@ class ModelEvaluation():
         st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
         targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
         st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy())
-
+        print(st_arr.shape)
         return st_seq, cond_seq, st_arr, targ_arr
 
     def root_weightet_sqr(self, true_traj, pred_trajs):
@@ -320,111 +332,83 @@ class ModelEvaluation():
             pickle.dump(rwse_dict, f)
 
 
-config = loadConfig('series027exp006')
+config = loadConfig('series038exp005')
+# config = loadConfig('series039exp001')
+# config = loadConfig('series039exp002')
 test_data = TestdataObj(config)
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
-
-
-# %%
 st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
 
-actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                [cond_seq[n][0,:,:] for n in range(4)]], 5, 8)
 
+bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
+
+actions = eval_obj.policy.get_actions([st_seq[0,:,:],
+                                [cond_seq[n][0,:,:] for n in range(5)]],  bc_der, 10, pred_h)
 
 actions.shape
-bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-act_n = 1
-for act_n in range(4):
+actions.shape
+# %%
+for act_n in range(5):
     plt.figure()
-    plt.plot(np.arange(0, 4.1, 0.1), targ_arr[19:60, act_n])
+    plt.plot(np.arange(0, end_sec, 0.1), targ_arr[19:19+40, act_n], color='red')
 
     for trj in range(1):
-        x = np.arange(0, 4.1, 0.5)
-        f = CubicSpline(x, actions[trj,:,act_n])
-        f = CubicSpline(x, actions[trj,:,act_n], bc_type=((2, bc_der[act_n]), (2, 0)))
-        coefs = np.stack(f.c, axis=1)
-        plt.scatter(x, actions[trj,:,act_n])
-
-        x = np.arange(0, 0.6, 0.1)
-        start = 0
-        for c in coefs:
-            plt.plot(x+start, np.poly1d(c)(x), color='grey')
-            start += 0.5
-    # plt.plot(actions[0,:,0], linestyle='--')
-    plt.grid()
+        plt.plot(np.arange(0, end_sec, 0.1), actions[trj,:,act_n], color='grey')
 
 # %%
-st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(1289)
 
-actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                [cond_seq[n][0,:,:] for n in range(4)]], 5, 8)
+np.array([1,2,3,4,5,6])[::2]
+step_sec = 1
+end_sec = 4
+pred_h = 4
 
-
-actions.shape
+# st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(1289)
+# st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2104)
 bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-
+actions = eval_obj.policy.get_actions([st_seq[0,:,:],
+                                [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
+actions.shape
 act_n = 1
-for act_n in range(4):
+for act_n in range(3):
     plt.figure()
-    plt.plot(np.arange(0, 4.1, 0.1), targ_arr[19:60, act_n])
+    plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
 
     for trj in range(1):
-        x = np.arange(0, 4.1, 0.5)
-        f = CubicSpline(x, actions[trj,:,act_n], bc_type=((1, bc_der[act_n]), (2, 0)))
-        coefs = np.stack(f.c, axis=1)
-        plt.scatter(x, actions[trj,:,act_n])
-
-        x = np.arange(0, 0.6, 0.1)
-        start = 0
-        for c in coefs:
-            plt.plot(x+start, np.poly1d(c)(x), color='grey')
-            start += 0.5
-    # plt.plot(actions[0,:,0], linestyle='--')
-    plt.grid()
-
-# %%
-actions.shape
-
-bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-
-step_size = 3
-pred_h = 15
-traj_span = 4.6 # seconds
-act_n = 1
-for act_n in range(4):
-    plt.figure()
-    plt.plot(np.arange(0, traj_span, 0.1), targ_arr[19:20+pred_h*step_size, act_n])
-
-    for trj in range(2):
-        x = np.arange(0, traj_span, 0.3)
-        f = CubicSpline(x, actions[trj,:,act_n], bc_type=((1, bc_der[act_n]), (2, 0)))
-        coefs = np.stack(f.c, axis=1)
-        plt.scatter(x, actions[trj,:,act_n])
-
-        x = np.arange(0, 0.4, 0.1)
-
-        start = 0
-        for c in coefs:
-            plt.plot(x+start, np.poly1d(c)(x), color='grey')
-            start += 0.3
-    # plt.plot(actions[0,:,0], linestyle='--')
+        plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
 
     plt.grid()
+    plt.xlabel('Prediction horizon [s]')
+    if act_n == 1:
+        plt.ylabel('Lateral speed [m/s]')
+    else:
+        plt.ylabel('Acceleration [$m/s^2$]')
 
-
+skip
 # %%
-ckpt
+for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
+    st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(episode)
+    bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
 
-actions.shape
+    actions = eval_obj.policy.get_actions([st_seq[0,:,:],
+                                    [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
 
-actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                [cond_seq[n][0,:,:] for n in range(5)]], 5, 4)
+    for act_n in range(5):
+        plt.figure()
+        plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
 
-a = [0,0]
-a == [0,0]
+        for trj in range(5):
+            plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
+
+        plt.grid()
+        plt.xlabel('Prediction horizon [s]')
+        if act_n == 1:
+            plt.ylabel('Lateral speed [m/s]')
+        else:
+            plt.ylabel('Acceleration [$m/s^2$]')
+
 # %%
 config = loadConfig('series025exp001')
 test_data = TestdataObj(config)
