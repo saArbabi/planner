@@ -338,7 +338,7 @@ class ModelEvaluation():
 
 # config = loadConfig('series041exp001')
 # config = loadConfig('series042exp007')
-config = loadConfig('series044exp001')
+config = loadConfig('series044exp005')
 # config = loadConfig('series039exp001')
 # config = loadConfig('series039exp002')
 test_data = TestdataObj(config)
@@ -353,17 +353,17 @@ pred_h = 4
 
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(1289)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
-st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2104)
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(895)
 bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
 actions = eval_obj.policy.get_actions([st_seq[0,:,:],
                                 [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
 actions.shape
 act_n = 1
-for act_n in range(3):
+for act_n in range(5):
     plt.figure()
     plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
 
-    for trj in range(1):
+    for trj in range(10):
         plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
 
     plt.grid()
