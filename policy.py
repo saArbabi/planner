@@ -338,7 +338,7 @@ class ModelEvaluation():
 
 # config = loadConfig('series041exp001')
 # config = loadConfig('series042exp007')
-config = loadConfig('series043exp006')
+config = loadConfig('series044exp001')
 # config = loadConfig('series039exp001')
 # config = loadConfig('series039exp002')
 test_data = TestdataObj(config)
