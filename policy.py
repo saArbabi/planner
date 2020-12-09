@@ -131,7 +131,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-6')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-8')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -155,7 +155,7 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        skip_n = 4 # done for a smoother trajectory
+        skip_n = 12 # done for a smoother trajectory
         step_len = round(skip_n*test_data.data_obj.step_size*0.1, 1) # [s]
         steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(test_data.data_obj.step_size*0.1)))
 
@@ -338,7 +338,7 @@ class ModelEvaluation():
 
 # config = loadConfig('series041exp001')
 # config = loadConfig('series042exp007')
-config = loadConfig('series044exp005')
+config = loadConfig('series044exp006')
 # config = loadConfig('series039exp001')
 # config = loadConfig('series039exp002')
 test_data = TestdataObj(config)
