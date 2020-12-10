@@ -1,7 +1,5 @@
 import numpy as np
-from models.core.train_eval.utils import loadConfig
 import json
-import matplotlib.pyplot as plt
 from importlib import reload
 import os
 from models.core.tf_models.cae_model import CAE
@@ -11,14 +9,11 @@ import dill
 from collections import deque
 from models.core.tf_models import utils
 from scipy.interpolate import CubicSpline
-reload(utils)
 import time
-
-# %%
-
 from models.core.tf_models import cae_model
 reload(cae_model)
 from models.core.tf_models.cae_model import CAE
+
 class GenModel():
     """TODO:
     - reward (A*state + B*Belief)
@@ -142,6 +137,7 @@ class MergePolicy():
         :Param: [state_seq, cond_seq], bc_der, traj_n, pred_h(s)
         :Return: unscaled action array for all cars
         """
+        data_obj = self.test_data.data_obj
         st_seq, cond_seq = seq
         # reshape to fit model
         st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
@@ -155,9 +151,9 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        skip_n = 12 # done for a smoother trajectory
-        step_len = round(skip_n*test_data.data_obj.step_size*0.1, 1) # [s]
-        steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(test_data.data_obj.step_size*0.1)))
+        skip_n = 4 # done for a smoother trajectory
+        step_len = round(skip_n*data_obj.step_size*0.1, 1) # [s]
+        steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(data_obj.step_size*0.1)))
 
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
@@ -174,20 +170,20 @@ class MergePolicy():
 
             i += 1
 
-        unscaled_acts = test_data.data_obj.action_scaler.inverse_transform(scaled_acts)
+        unscaled_acts = data_obj.action_scaler.inverse_transform(scaled_acts)
         unscaled_acts.shape = (traj_n, steps_n, veh_acts_count)
 
         # conditional at the first step - used for vis
         cond0 = [cond_seq[n][0, 0, :].tolist() for n in range(5)]
         cond0 = np.array([item for sublist in cond0 for item in sublist])
-        cond0 = test_data.data_obj.action_scaler.inverse_transform(np.reshape(cond0, [1,-1]))
+        cond0 = data_obj.action_scaler.inverse_transform(np.reshape(cond0, [1,-1]))
         cond0.shape = (1, 1, 5)
         cond0 = np.repeat(cond0, traj_n, axis=0)
         unscaled_acts = np.concatenate([cond0, unscaled_acts], axis=1)
 
         # spline fitting
         actions = unscaled_acts[:,0::skip_n,:]
-        traj_len = steps_n*test_data.data_obj.step_size*0.1 # [s]
+        traj_len = steps_n*data_obj.step_size*0.1 # [s]
         trajectories = np.zeros([traj_n, int(traj_len*10)+1, 5])
         step_up = int(step_len*10)+1
         x_whole = np.arange(0, traj_len+0.1, step_len)
@@ -237,7 +233,7 @@ class ModelEvaluation():
         self.pred_h = 4 # [s]
         self.dirName = './models/experiments/'+config['exp_id']
 
-    def obsSequence(self, state_arr, target_arr):
+    def obsSequence(self, state_arr, target_arr, test_data):
         state_arr = test_data.data_obj.applyStateScaler(state_arr)
         target_arr = test_data.data_obj.applyActionScaler(target_arr)
         actions = [target_arr[:, n:n+1] for n in range(5)]
@@ -266,22 +262,35 @@ class ModelEvaluation():
 
         return np.array(states),  [np.array(conds[n]) for n in range(5)]
 
-    def sceneSetup(self, episode_id):
+    def episodeSetup(self, episode_id):
         """:Return: All info needed for evaluating model on a given scene
         """
         test_data = self.test_data
         st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
         targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
-        st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy())
+        st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy(), test_data)
         print(st_arr.shape)
-        return st_seq, cond_seq, st_arr, targ_arr
+        return st_seq, cond_seq, targ_arr
+
+    def sceneSetup(self, st_seq, cond_seq, targ_arr, current_step, pred_h):
+        """Set up a scence for a given initial step.
+            Note: steps are index of numpy array, starting from 0.
+        """
+        start_step = current_step - 19
+        end_step = int(current_step + pred_h/0.1)
+
+        bc_der_i = (targ_arr[current_step, :]-targ_arr[current_step-1, :])*10
+        st_i = st_seq[start_step,:,:]
+        cond_i = [cond_seq[n][start_step,:,:] for n in range(5)]
+        targ_i = targ_arr[start_step:end_step, :]
+        return st_i, cond_i, bc_der_i, targ_i
 
     def root_weightet_sqr(self, true_traj, pred_trajs):
         err = np.sqrt(np.mean(np.square(true_traj-pred_trajs), axis=0))
         return err
 
     def trajCompute(self, episode_id):
-        st_seq, cond_seq, st_arr, targ_arr = self.sceneSetup(episode_id, self.test_data)
+        st_seq, cond_seq, st_arr, targ_arr = self.episodeSetup(episode_id, self.test_data)
         actions = self.policy.get_actions([st_seq[29].copy(), cond_seq[29].copy()],
                                                     self.traj_n, self.pred_h)
 
@@ -303,7 +312,7 @@ class ModelEvaluation():
         _row = 0
 
         for episode_id in self.test_data.test_episodes[:self.episode_n]:
-            st_seq, cond_seq, _, targ_arr = self.sceneSetup(episode_id, self.test_data)
+            st_seq, cond_seq, _, targ_arr = self.episodeSetup(episode_id, self.test_data)
             if len(st_seq) > 6:
                 splits_n = 6
             else:
@@ -335,243 +344,3 @@ class ModelEvaluation():
 
         with open(self.dirName+'/rwse', "wb") as f:
             pickle.dump(rwse_dict, f)
-
-# config = loadConfig('series041exp001')
-# config = loadConfig('series042exp007')
-config = loadConfig('series044exp006')
-# config = loadConfig('series039exp001')
-# config = loadConfig('series039exp002')
-test_data = TestdataObj(config)
-model = MergePolicy(config)
-eval_obj = ModelEvaluation(model, config)
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
-
-# %%
-step_sec = 1
-end_sec = 4
-pred_h = 4
-
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(1289)
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(2895)
-st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(895)
-bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
-actions.shape
-act_n = 1
-for act_n in range(5):
-    plt.figure()
-    plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
-
-    for trj in range(10):
-        plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
-
-    plt.grid()
-    plt.xlabel('Prediction horizon [s]')
-    if act_n == 1:
-        plt.ylabel('Lateral speed [m/s]')
-    else:
-        plt.ylabel('Acceleration [$m/s^2$]')
-# %%
-
-fig_num = 0
-for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
-    st_seq, cond_seq, st_arr, targ_arr = eval_obj.sceneSetup(episode)
-    bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-
-    actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                    [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
-
-    for act_n in range(5):
-        plt.figure()
-        plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
-
-        for trj in range(10):
-            plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
-
-        plt.grid()
-        plt.title(str(fig_num))
-        plt.xlabel('Prediction horizon [s]')
-        if act_n == 1:
-            plt.ylabel('Lateral speed [m/s]')
-        else:
-            plt.ylabel('Acceleration [$m/s^2$]')
-        fig_num += 1
-
-# %%
-config = loadConfig('series025exp001')
-test_data = TestdataObj(config)
-model = MergePolicy(config)
-eval_obj = ModelEvaluation(model, config)
-for episode_id in [2895, 1289]:
-    vis(episode_id)
-# %%
-# eval_obj.compute_rwse()
-
-
-# %%
-exp_list = ['series022exp001', 'series022exp002', 'series022exp003']
-rwse_exp = {}
-for exp in exp_list:
-    dirName = './models/experiments/'+exp
-    with open(dirName+'/'+'rwse', 'rb') as f:
-        rwse_exp[exp] = dill.load(f, ignore=True)
-
-# %%
-
-for exp in exp_list:
-    plt.plot(rwse_exp[exp]['m_long'])
-plt.legend(exp_list)
-# %%
-split = 29
-for split in range(29, 35):
-    plt.figure()
-    actions = eval_obj.policy.get_actions([st_seq[split].copy(), cond_seq[split].copy()], 5, 30)
-    plt.plot(targ_arr[split:split+30 ,0])
-    for traj in actions[:,:,0]:
-        plt.plot(traj)
-
-
-# %%
-pred_arrs, truth_arrs = eval_obj.compute_rwse()
-
-pred_arrs[0][0:2].shape
-plt.plot(pred_arrs[0][3,:])
-plt.plot(truth_arrs[0][1,:])
-
-# %%
-_row = 0
-
-for _traj in range(18):
-    plt.figure()
-    plt.title(str(_traj+1))
-
-    for sample_traj in range(_traj, _traj+2):
-        plt.plot(pred_arrs[0][_row,:])
-        _row += 1
-    plt.grid()
-    plt.plot(truth_arrs[0][_traj,:])
-
-# %%
-plt.plot(err_arrs['m_long'])
-
-plt.plot(err_arrs['y_long'])
-plt.plot(err_arrs['f_long'])
-
-# %%
-
-
-# a = np.array([[2,4,6], [3,5,7]])
-# b = np.array([1,1,1])
-#
-# a-b
-# config = loadConfig('series020exp001')
-# eval_obj = ModelEvaluation(config)
-# state_true, state_predictions = eval_obj.trajCompute(2895)
-
-# %%
-err_arrs = eval_obj.compute_rwse()
-for i in range(5):
-    plt.plot(err_arrs[i])
-plt.legend([1,2,3,4,5])
-
-# %%
-np.linspace()
-
-discount_factor = 0.9
-np.power(discount_factor, np.array(range(1,20)))
-
-
-
-# %%
-def choose_traj(self):
-    """
-    Select best trajectory according to the following metrics:
-    - TTC
-    - Jerk (mveh and yveh combined)
-    - Goal deviation (terminal?)
-
-
-    """
-# %%
-
-
-# %%
-# config = loadConfig('series007exp001')
-
-# episode_id = 2895
-def vis(episode_id):
-    state_true, state_predictions = eval_obj.trajCompute(episode_id)
-
-    mid_point = 29
-    end_point = 29+eval_obj.steps_n
-    title_info = 'episode_id: ' + str(episode_id) + ' max_err: ' + str(config['model_config']['allowed_error'])
-    fig, axs = plt.subplots(1, 3, figsize=(15,3))
-
-    vis_state = eval_obj.gen_model.indx_m['vel']
-    axs[0].plot(range(end_point), state_true[0:end_point, vis_state], color='red')
-
-    for n in range(eval_obj.traj_n):
-        axs[0].plot(range(mid_point, end_point), state_predictions[n, :, vis_state], color='grey')
-    axs[0].grid()
-    axs[0].set_xlabel('steps')
-    axs[0].set_ylabel('longitudinal speed [m/s]')
-    axs[0].set_title('mveh' + title_info)
-
-    vis_state = eval_obj.gen_model.indx_y['vel']
-    axs[1].plot(range(end_point), state_true[0:end_point, vis_state], color='red')
-
-    for n in range(eval_obj.traj_n):
-        axs[1].plot(range(mid_point, end_point), state_predictions[n, :, vis_state], color='grey')
-    axs[1].grid()
-    axs[1].set_xlabel('steps')
-    axs[1].set_ylabel('longitudinal speed [m/s]')
-    axs[1].set_title('yveh ' + title_info)
-
-    vis_state_m = eval_obj.gen_model.indx_m['pc']
-    axs[2].plot(range(end_point), state_true[0:end_point, eval_obj.gen_model.indx_m['pc']], color='red')
-    state_true[-1]
-    for n in range(eval_obj.traj_n):
-        axs[2].plot(range(mid_point, end_point), state_predictions[n, :, eval_obj.gen_model.indx_m['pc']] , color='grey')
-
-    axs[2].grid()
-    axs[2].set_xlabel('steps')
-    axs[2].set_ylabel('pc [m]')
-    axs[2].set_title('mveh ' + title_info)
-
-    fig.tight_layout()
-
-
-
-
-# %%
-# %%
-"""State plots
-"""
-for item in eval.scalar_indx:
-    fig = plt.figure()
-    plt.plot(eval.st_arr_true[:, eval.scalar_indx[item]], color='red')
-    for s in range(eval.samples_n):
-        plt.plot(st_arr[s, :, eval.scalar_indx[item]], color='grey')
-    plt.grid()
-    plt.title(item)
-    plt.xlabel('time step (n)')
-    plt.xticks(range(eval.steps_n))
-
-# %%
-"""Action plots
-"""
-for item in ['act_long', 'act_lat']:
-    if item == 'act_long':
-        indx = 0
-    else:
-        indx = 1
-
-    fig = plt.figure()
-    plt.plot(eval.mveh_a_true[:, indx], color='red')
-    for s in range(eval.samples_n):
-        plt.plot(mveh_a[s, :, indx], color='grey')
-    plt.grid()
-    plt.title(item)
-    plt.xlabel('time step (n)')
-    plt.xticks(range(eval.steps_n))
