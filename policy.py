@@ -151,7 +151,7 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        skip_n = 4 # done for a smoother trajectory
+        skip_n = 10 # done for a smoother trajectory
         step_len = round(skip_n*data_obj.step_size*0.1, 1) # [s]
         steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(data_obj.step_size*0.1)))
 

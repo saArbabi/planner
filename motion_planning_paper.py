@@ -9,7 +9,7 @@ from planner import policy
 reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 
-config = loadConfig('series043exp006')
+config = loadConfig('series046exp005')
 # config = loadConfig('series044exp006')
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
@@ -29,16 +29,15 @@ st_i, cond_i, bc_der_i, targ_i = eval_obj.sceneSetup(st_seq,
                                                 pred_h=pred_h)
 targ_i.shape
 actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=10, pred_h=pred_h)
-
 # %%
 """How good is my planning and prediction?
 """
-act_n = 0
+act_n = 4
 trajs = actions[:,:,act_n]
 trajs.shape
 avg_traj = np.mean(trajs, axis=0)
 st_dev = np.std(trajs, axis=0)
-for trj in range(10):
+for trj in range(5):
     plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), actions[trj,:,act_n], color='grey')
 plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj)
 plt.plot(np.arange(0, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
