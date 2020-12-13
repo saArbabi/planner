@@ -126,7 +126,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-8')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-4')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -143,7 +143,7 @@ class MergePolicy():
         st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
 
         for n in range(5):
-            cond_seq[n].shape = (1, 4, 1)
+            cond_seq[n].shape = (1, 1, 1)
             cond_seq[n] = np.repeat(cond_seq[n], traj_n, axis=0)
 
         st_seq = np.repeat(st_seq, traj_n, axis=0)
@@ -229,19 +229,19 @@ class ModelEvaluation():
         self.test_data = TestdataObj(config)
         self.gen_model = GenModel()
         self.episode_n = 50
-        self.traj_n = 10
+        self.traj_n = 50
         self.pred_h = 4 # [s]
         self.dirName = './models/experiments/'+config['exp_id']
+        data_obj = self.test_data.data_obj
 
     def obsSequence(self, state_arr, target_arr, test_data):
         state_arr = test_data.data_obj.applyStateScaler(state_arr)
         target_arr = test_data.data_obj.applyActionScaler(target_arr)
         actions = [target_arr[:, n:n+1] for n in range(5)]
         traj_len = len(state_arr)
-        snip_n = 5
-
+        pred_step_n = self.pred_h*10
+        step_size = test_data.data_obj.step_size
         obs_n = test_data.data_obj.obs_n
-        pred_h = 4 # only the fist step conditional is needed
         conds = [[],[],[],[],[]]
         states = []
 
@@ -251,14 +251,14 @@ class ModelEvaluation():
                 prev_states.append(state_arr[i])
 
                 if len(prev_states) == obs_n:
-                    indx = np.arange(i, i+(pred_h+1)*snip_n, snip_n)
+                    indx = np.arange(i, i+(pred_step_n+1)*step_size, step_size)
                     indx = indx[indx<traj_len]
-                    if indx.size != 5:
+                    if indx.size != pred_step_n+1:
                         break
 
                     states.append(np.array(prev_states))
                     for n in range(5):
-                        conds[n].append(actions[n][indx[:-1]])
+                        conds[n].append(actions[n][indx[0:1]])
 
         return np.array(states),  [np.array(conds[n]) for n in range(5)]
 
@@ -269,7 +269,6 @@ class ModelEvaluation():
         st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
         targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
         st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy(), test_data)
-        print(st_arr.shape)
         return st_seq, cond_seq, targ_arr
 
     def sceneSetup(self, st_seq, cond_seq, targ_arr, current_step, pred_h):
@@ -281,11 +280,15 @@ class ModelEvaluation():
 
         bc_der_i = (targ_arr[current_step, :]-targ_arr[current_step-1, :])*10
         st_i = st_seq[start_step,:,:]
+
         cond_i = [cond_seq[n][start_step,:,:] for n in range(5)]
-        targ_i = targ_arr[start_step:end_step, :]
-        return st_i, cond_i, bc_der_i, targ_i
+        history_i = targ_arr[start_step:current_step+1, :]
+        targ_i = targ_arr[current_step:end_step, :]
+        return st_i, cond_i, bc_der_i, history_i, targ_i
 
     def root_weightet_sqr(self, true_traj, pred_trajs):
+        true_traj = true_traj[~np.all(true_traj == 0, axis=1)]
+        pred_trajs = pred_trajs[~np.all(pred_trajs == 0, axis=1)]
         err = np.sqrt(np.mean(np.square(true_traj-pred_trajs), axis=0))
         return err
 
@@ -307,36 +310,40 @@ class ModelEvaluation():
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
         rwse_dict = {'m_long':0, 'm_lat':1, 'y_long':2, 'f_long':3, 'fadj_long':4}
-        pred_arrs = [np.zeros([self.episode_n*self.traj_n*6, self.pred_h]) for i in range(5)]
-        truth_arrs = [np.zeros([self.episode_n*self.traj_n*6, self.pred_h]) for i in range(5)]
+        pred_step_n = self.pred_h*10
+        splits_n = 6 # number of splits across an entire trajectory
+        pred_arrs = [np.zeros([self.episode_n*self.traj_n*6,
+                                                pred_step_n]) for i in range(5)]
+        truth_arrs = [np.zeros([self.episode_n*self.traj_n*6,
+                                                pred_step_n]) for i in range(5)]
         _row = 0
 
         for episode_id in self.test_data.test_episodes[:self.episode_n]:
-            st_seq, cond_seq, _, targ_arr = self.episodeSetup(episode_id, self.test_data)
-            if len(st_seq) > 6:
+            st_seq, cond_seq, targ_arr = self.episodeSetup(episode_id)
+            if len(st_seq) >= 6:
                 splits_n = 6
             else:
                 splits_n = len(st_seq)
 
-            traj_splits = np.random.choice(list(st_seq.keys()), splits_n, replace=False)
+            traj_splits = np.random.choice(range(19, 19+len(st_seq)), splits_n, replace=False)
 
             for split in traj_splits:
-
-                st_seq_i = st_seq[split]
-                cond_seq_i = cond_seq[split]
-                true_arr_i = targ_arr[split:split+self.pred_h, :]
-                true_arr_i.shape = (1, self.pred_h, 5)
-
-                bc_der = (cond_seq[split]-cond_seq[split-1])*10
-                actions = self.policy.get_actions([st_seq_i.copy(), cond_seq_i.copy()], bc_der,
-                                                        self.traj_n, self.pred_h)
+                st_i, cond_i, bc_der_i, _, targ_i = self.sceneSetup(st_seq,
+                                                                cond_seq,
+                                                                targ_arr,
+                                                                current_step=split,
+                                                                pred_h=self.pred_h)
+                targ_i.shape = (1, pred_step_n, 5)
+                actions = self.policy.get_actions([st_i, cond_i], bc_der_i,
+                                        traj_n=self.traj_n, pred_h=self.pred_h)
 
                 for vehact_indx in range(5):
                     # veh_mlong, veh_mlat, veh_y, veh_f, veh_fadj
-                    truth_arrs[vehact_indx][_row:_row+self.traj_n, :] = true_arr_i[:,:,vehact_indx]
+                    truth_arrs[vehact_indx][_row:_row+self.traj_n, :] = targ_i[:,:,vehact_indx]
                     pred_arrs[vehact_indx][_row:_row+self.traj_n, :] = actions[:,:,vehact_indx]
                 _row += self.traj_n
 
+            print('Episode ', episode_id, ' has been completed!')
         for key in rwse_dict.keys():
             rwse_dict[key] = self.root_weightet_sqr(truth_arrs[rwse_dict[key]], \
                                                         pred_arrs[rwse_dict[key]])
