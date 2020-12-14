@@ -46,32 +46,95 @@ plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
 plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
 plt.fill_between(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev)
 plt.grid()
-
 # %%
-exp_list = ['series047exp001', 'series047exp002', 'series047exp003', 'series047exp004']
-for rwse_dict = eval_obj.compute_rwse()
+""" scene evolution plots
+"""
+fig, axs = plt.subplots(1, 5, figsize=(15,3))
+fig.subplots_adjust(wspace=0.05, hspace=0)
+titles = ['Vehicle A Longitudinal Actions',
+        'Vehicle A Lateral Actions',
+        'Vehicle B Actions',
+        'Vehicle C Actions',
+        'Vehicle D Actions']
+
+for ax_i in range(5):
+    axs[ax_i].set_ylim([3,-3])
+    axs[ax_i].set_xlim([-1.9,4.5])
+    axs[ax_i].spines['right'].set_visible(False)
+    axs[ax_i].spines['top'].set_visible(False)
+    if ax_i>0:
+        # axs[ax_i].set_yticks([])
+        axs[ax_i].set_yticklabels([])
 
 
-# %%
 for act_n in range(5):
+    trajs = actions[:,:,act_n]
+    avg_traj = np.mean(trajs, axis=0)
+    st_dev = np.std(trajs, axis=0)
+    axs[act_n].title.set_text(titles[act_n])
+    axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
+    axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
+    # axs[act_n].scatter(np.arange(-2, 0, 0.1)[::4], history_i[:, act_n][::4], color='grey', s=20)
+    axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
+    axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
+# %%
+""" rwse plots
+"""
+fig, axs = plt.subplots(2, 2, figsize=(10,10))
+fig.subplots_adjust(wspace=0.05, hspace=0)
+
+for ax_i in range(5):
+    axs[ax_i].set_ylim([3,-3])
+    axs[ax_i].set_xlim([0,6.5])
+    axs[ax_i].spines['right'].set_visible(False)
+    axs[ax_i].spines['top'].set_visible(False)
+    if ax_i>0:
+        # axs[ax_i].set_yticks([])
+        axs[ax_i].set_yticklabels([])
+
+
+
+plt.plot([1.9,1.9],[3,-3], color='black', linestyle='--')
+plt.scatter(np.arange(0, 2, 0.1)[::3], history_i[:, act_n][::3], color='orange', s=20)
+plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='grey', linewidth=2)
+
+
+# %%
+"""get rwse
+"""
+exp_names = ['series047exp005','series047exp006']
+# exp_names = ['series047exp001','series047exp002', 'series047exp003', 'series047exp004']
+for exp_name in exp_names:
+    config = loadConfig(exp_name)
+    # config = loadConfig('series044exp006')
+    model = MergePolicy(config)
+    eval_obj = ModelEvaluation(model, config)
+    eval_obj.compute_rwse()
+# %%
+"""visualise rwse
+"""
+exp_names = ['series047exp001','series047exp002', 'series047exp003', 'series047exp004',
+                                                    'series047exp005','series047exp006']
+rwse_exp = {}
+for exp in exp_names:
+    dirName = './models/experiments/'+exp
+    with open(dirName+'/'+'rwse', 'rb') as f:
+        rwse_exp[exp] = dill.load(f, ignore=True)
+
+for rwse_veh in ['m_long', 'm_lat', 'y_long', 'f_long', 'fadj_long']:
     plt.figure()
-    plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
-    plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
-
-    for trj in range(10):
-        plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), actions[trj,:,act_n], color='grey')
-
+    plt.title(rwse_veh)
+    for exp in exp_names:
+        plt.plot(rwse_exp[exp][rwse_veh])
     plt.grid()
-    plt.title('time_step: '+ str(time_step))
-    plt.xlabel('Prediction horizon [s]')
-    if act_n == 1:
-        plt.ylabel('Lateral speed [m/ s]')
-    else:
-        plt.ylabel('Acceleration [$m/s^2$]')
+    plt.legend(exp_names)
+
 # %%
 for time_step in range(19, 59, 5):
 # for time_step in range(19,20):
-    st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(1289)
+    # st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(1289)
+    st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(2895)
+
     st_i, cond_i, bc_der_i, history_i, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
                                                     targ_arr,
@@ -85,6 +148,9 @@ for time_step in range(19, 59, 5):
         plt.figure()
         plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
         plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
+        avg_traj = np.mean(actions[:,:,act_n], axis=0)
+        st_dev = np.std(actions[:,:,act_n], axis=0)
+        plt.fill_between(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev)
 
         for trj in range(10):
             plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), actions[trj,:,act_n], color='grey')
@@ -138,25 +204,13 @@ for episode_id in [2895, 1289]:
 # %%
 import dill
 #
-# exp_list = ['series046exp005', 'series047exp001',
+# exp_names = ['series046exp005', 'series047exp001',
 #                                 'series047exp002',
 #                                 'series047exp003']
-# exp_list = ['series046exp005','series047exp003','series047exp004']
-exp_list = ['series046exp005','series047exp003']
+# exp_names = ['series046exp005','series047exp003','series047exp004']
+exp_names = ['series046exp005','series047exp003']
 
-rwse_exp = {}
-for exp in exp_list:
-    dirName = './models/experiments/'+exp
-    with open(dirName+'/'+'rwse', 'rb') as f:
-        rwse_exp[exp] = dill.load(f, ignore=True)
-# %%
-for rwse_veh in ['m_long', 'm_lat', 'y_long', 'f_long', 'fadj_long']:
-    plt.figure()
-    plt.title(rwse_veh)
-    for exp in exp_list:
-        plt.plot(rwse_exp[exp][rwse_veh])
-    plt.grid()
-    plt.legend(exp_list)
+
 # %%
 split = 29
 for split in range(29, 35):
