@@ -9,7 +9,7 @@ from planner import policy
 reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 
-config = loadConfig('series047exp003')
+config = loadConfig('series047exp006')
 # config = loadConfig('series044exp006')
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
@@ -18,12 +18,25 @@ eval_obj = ModelEvaluation(model, config)
 step_sec = 1
 end_sec = 4
 pred_h = 4
-# eval_obj.compute_rwse()
+# st_pred = eval_obj.compute_rwse()
+
+# %%
+st_pred['vel'].shape
+plt.plot(st_pred['long_vel'])
+plt.plot(st_pred['lat_vel'])
+# %%
+state_n = 0
+for i in range(50):
+    plt.plot(st_pred[i,:,state_n], color='grey')
+plt.plot(_[:, state_n])
+plt.grid()
+# %%
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1289)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
-st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(1289)
-st_i, cond_i, bc_der_i, history_i, targ_i = eval_obj.sceneSetup(st_seq,
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1289)
+st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                 cond_seq,
+                                                st_arr,
                                                 targ_arr,
                                                 current_step=19,
                                                 pred_h=pred_h)
@@ -49,34 +62,60 @@ plt.grid()
 # %%
 """ scene evolution plots
 """
-fig, axs = plt.subplots(1, 5, figsize=(15,3))
-fig.subplots_adjust(wspace=0.05, hspace=0)
-titles = ['Vehicle A Longitudinal Actions',
-        'Vehicle A Lateral Actions',
-        'Vehicle B Actions',
-        'Vehicle C Actions',
-        'Vehicle D Actions']
+for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
+    plt.figure()
+    st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(episode)
+    plt.plot(targ_arr[:, 1])
+    plt.grid()
+    plt.title(str(episode))
+# %%
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1344)
+targ_i.shape
+# %%
+pred_h = 2
+for time_step in range(19, 40, 5):
 
-for ax_i in range(5):
-    axs[ax_i].set_ylim([3,-3])
-    axs[ax_i].set_xlim([-1.9,4.5])
-    axs[ax_i].spines['right'].set_visible(False)
-    axs[ax_i].spines['top'].set_visible(False)
-    if ax_i>0:
-        # axs[ax_i].set_yticks([])
-        axs[ax_i].set_yticklabels([])
+    st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
+                                                    cond_seq,
+                                                    st_arr,
+                                                    targ_arr,
+                                                    current_step=time_step,
+                                                    pred_h=pred_h)
 
 
-for act_n in range(5):
-    trajs = actions[:,:,act_n]
-    avg_traj = np.mean(trajs, axis=0)
-    st_dev = np.std(trajs, axis=0)
-    axs[act_n].title.set_text(titles[act_n])
-    axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
-    axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
-    # axs[act_n].scatter(np.arange(-2, 0, 0.1)[::4], history_i[:, act_n][::4], color='grey', s=20)
-    axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
-    axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
+    actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=50, pred_h=pred_h)
+    fig, axs = plt.subplots(1, 5, figsize=(15,3))
+    fig.subplots_adjust(wspace=0.05, hspace=0)
+    titles = ['Vehicle A Longitudinal Actions',
+            'Vehicle A Lateral Actions',
+            'Vehicle B Actions',
+            'Vehicle C Actions',
+            'Vehicle D Actions']
+
+    for ax_i in range(5):
+        axs[ax_i].set_ylim([-3,3])
+        axs[ax_i].set_xlim([-1.9,2.5])
+        axs[ax_i].spines['right'].set_visible(False)
+        axs[ax_i].spines['top'].set_visible(False)
+        if ax_i>0:
+            # axs[ax_i].set_yticks([])
+            axs[ax_i].set_yticklabels([])
+
+
+    for act_n in range(5):
+        trajs = actions[:,:,act_n]
+        avg_traj = np.mean(trajs, axis=0)
+        st_dev = np.std(trajs, axis=0)
+        axs[act_n].plot(np.arange(0, pred_h, 0.1), avg_traj, color='purple')
+
+        axs[act_n].title.set_text(titles[act_n])
+        axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
+        axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
+        axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
+        axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
+        for trj in range(50):
+            axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3)
+
 # %%
 """ rwse plots
 """
@@ -102,7 +141,8 @@ plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='grey', linewidth=2)
 # %%
 """get rwse
 """
-exp_names = ['series047exp005','series047exp006']
+# exp_names = ['series049exp001']
+exp_names = ['series049exp002','series049exp003']
 # exp_names = ['series047exp001','series047exp002', 'series047exp003', 'series047exp004']
 for exp_name in exp_names:
     config = loadConfig(exp_name)
@@ -113,15 +153,17 @@ for exp_name in exp_names:
 # %%
 """visualise rwse
 """
-exp_names = ['series047exp001','series047exp002', 'series047exp003', 'series047exp004',
-                                                    'series047exp005','series047exp006']
+# exp_names = ['series047exp001','series047exp002', 'series047exp003', 'series047exp004',
+#                                     'series047exp005','series047exp006','series048exp001']
+# exp_names = ['series047exp003', 'series048exp001']
+exp_names = ['series048exp001', 'series047exp006']
 rwse_exp = {}
 for exp in exp_names:
     dirName = './models/experiments/'+exp
-    with open(dirName+'/'+'rwse', 'rb') as f:
+    with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
         rwse_exp[exp] = dill.load(f, ignore=True)
 
-for rwse_veh in ['m_long', 'm_lat', 'y_long', 'f_long', 'fadj_long']:
+for rwse_veh in ['long_vel', 'lat_vel']:
     plt.figure()
     plt.title(rwse_veh)
     for exp in exp_names:
@@ -132,8 +174,8 @@ for rwse_veh in ['m_long', 'm_lat', 'y_long', 'f_long', 'fadj_long']:
 # %%
 for time_step in range(19, 59, 5):
 # for time_step in range(19,20):
-    # st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(1289)
-    st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(2895)
+    st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(1289)
+    # st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(2895)
 
     st_i, cond_i, bc_der_i, history_i, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
@@ -149,6 +191,8 @@ for time_step in range(19, 59, 5):
         plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
         plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
         avg_traj = np.mean(actions[:,:,act_n], axis=0)
+        plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj, color='purple')
+
         st_dev = np.std(actions[:,:,act_n], axis=0)
         plt.fill_between(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev)
 
@@ -168,15 +212,19 @@ for time_step in range(19, 59, 5):
 # %%
 fig_num = 0
 for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
-    st_seq, cond_seq, targ_arr = eval_obj.episodeSetup(episode)
-    bc_der = (targ_arr[19, :]-targ_arr[18, :])*10
-
-    actions = eval_obj.policy.get_actions([st_seq[0,:,:],
-                                    [cond_seq[n][0,:,:] for n in range(5)]], bc_der, 10, pred_h)
+    st_seq, cond_seq, _, targ_arr = eval_obj.episodeSetup(episode)
+    st_i, cond_i, bc_der_i, _, _, targ_i = eval_obj.sceneSetup(st_seq,
+                                                    cond_seq,
+                                                    _,
+                                                    targ_arr,
+                                                    current_step=19,
+                                                    pred_h=pred_h)
+    actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i,
+                                                        traj_n=10, pred_h=pred_h)
 
     for act_n in range(5):
         plt.figure()
-        plt.plot(np.arange(0, pred_h, 0.1), targ_arr[19:19+40, act_n], color='red')
+        plt.plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
 
         for trj in range(10):
             plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
@@ -267,8 +315,7 @@ plt.legend([1,2,3,4,5])
 # %%
 np.linspace()
 
-discount_factor = 0.9
-np.power(discount_factor, np.array(range(1,20)))
+
 
 
 
@@ -282,7 +329,33 @@ def choose_traj(self):
 
 
     """
+    trajs = actions[:,:,act_n]
+actions.shape
 # %%
+act_n = 0
+mveh_jerk = ((actions[:,1:,act_n] - actions[:,:-1,act_n])/0.1)**2
+yveh_jerk = ((actions[:,1:,act_n+2] - actions[:,:-1,act_n+2])/0.1)**2
+discount_factor = 0.9
+discount = np.power(discount_factor, np.array(range(1,40)))
+jerk_cost = np.sum((mveh_jerk+yveh_jerk)*discount, axis=1)
+
+2+2
+for i in range(10):
+    if i == np.argmin(jerk_cost):
+        plt.plot(actions[i,:,act_n], color='green')
+    elif i == np.argmax(jerk_cost):
+        plt.plot(actions[i,:,act_n], color='red')
+    else:
+        plt.plot(actions[i,:,act_n], color='grey')
+
+# plt.figure()
+# for i in range(10):
+#     if i == np.argmin(jerk_cost):
+#         plt.plot(actions[i,:,act_n], color='green')
+#     elif i == np.argmax(jerk_cost):
+#         plt.plot(actions[i,:,act_n], color='red')
+#     else:
+#         plt.plot(actions[i,:,act_n], color='grey')
 
 
 # %%

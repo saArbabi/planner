@@ -62,7 +62,6 @@ class GenModel():
         :Return: state_ii, state at the next time_step
         """
         st_arr_ii = st_arr_i.copy()
-
         st_arr_ii[:, self.indx_m['vel']] += acts_arr_i[:, 0]*0.1
         st_arr_ii[:, self.indx_y['vel']] += acts_arr_i[:, 2]*0.1
         st_arr_ii[:, self.indx_f['vel']] += acts_arr_i[:, 3]*0.1
@@ -230,7 +229,7 @@ class ModelEvaluation():
         self.gen_model = GenModel()
         self.episode_n = 50
         self.traj_n = 50
-        self.pred_h = 4 # [s]
+        self.pred_h = 2 # [s]
         self.dirName = './models/experiments/'+config['exp_id']
         data_obj = self.test_data.data_obj
 
@@ -269,9 +268,9 @@ class ModelEvaluation():
         st_arr = test_data.states_set[test_data.states_set[:, 0] == episode_id][:, 1:]
         targ_arr = test_data.targets_set[test_data.targets_set[:, 0] == episode_id][:, 1:]
         st_seq, cond_seq = self.obsSequence(st_arr.copy(), targ_arr.copy(), test_data)
-        return st_seq, cond_seq, targ_arr
+        return st_seq, cond_seq, st_arr, targ_arr
 
-    def sceneSetup(self, st_seq, cond_seq, targ_arr, current_step, pred_h):
+    def sceneSetup(self, st_seq, cond_seq, st_arr, targ_arr, current_step, pred_h):
         """Set up a scence for a given initial step.
             Note: steps are index of numpy array, starting from 0.
         """
@@ -279,12 +278,13 @@ class ModelEvaluation():
         end_step = int(current_step + pred_h/0.1)
 
         bc_der_i = (targ_arr[current_step, :]-targ_arr[current_step-1, :])*10
-        st_i = st_seq[start_step,:,:]
+        st_seq_i = st_seq[start_step,:,:]
 
-        cond_i = [cond_seq[n][start_step,:,:] for n in range(5)]
+        cond_seq_i = [cond_seq[n][start_step,:,:] for n in range(5)]
         history_i = targ_arr[start_step:current_step+1, :]
         targ_i = targ_arr[current_step:end_step, :]
-        return st_i, cond_i, bc_der_i, history_i, targ_i
+        st_i = st_arr[current_step:end_step, :]
+        return st_seq_i, cond_seq_i, bc_der_i, history_i, st_i, targ_i
 
     def root_weightet_sqr(self, true_traj, pred_trajs):
         true_traj = true_traj[~np.all(true_traj == 0, axis=1)]
@@ -309,17 +309,21 @@ class ModelEvaluation():
         """
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
-        rwse_dict = {'m_long':0, 'm_lat':1, 'y_long':2, 'f_long':3, 'fadj_long':4}
+        rwse_dict = {'long_vel':0, 'lat_vel':1}
         pred_step_n = self.pred_h*10
         splits_n = 6 # number of splits across an entire trajectory
         pred_arrs = [np.zeros([self.episode_n*self.traj_n*6,
-                                                pred_step_n]) for i in range(5)]
+                                                pred_step_n]) for i in range(2)]
         truth_arrs = [np.zeros([self.episode_n*self.traj_n*6,
-                                                pred_step_n]) for i in range(5)]
+                                                pred_step_n]) for i in range(2)]
         _row = 0
 
         for episode_id in self.test_data.test_episodes[:self.episode_n]:
-            st_seq, cond_seq, targ_arr = self.episodeSetup(episode_id)
+        # for episode_id in [1289]:
+            st_seq, cond_seq, st_arr, targ_arr = self.episodeSetup(episode_id)
+            self.gen_model.max_pc = max(st_arr[:, self.gen_model.indx_m['pc']])
+            self.gen_model.min_pc = min(st_arr[:, self.gen_model.indx_m['pc']])
+
             if len(st_seq) >= 6:
                 splits_n = 6
             else:
@@ -328,26 +332,35 @@ class ModelEvaluation():
             traj_splits = np.random.choice(range(19, 19+len(st_seq)), splits_n, replace=False)
 
             for split in traj_splits:
-                st_i, cond_i, bc_der_i, _, targ_i = self.sceneSetup(st_seq,
+                st_seq_i, cond_seq_i, bc_der_i, _, st_i, targ_i = self.sceneSetup(st_seq,
                                                                 cond_seq,
+                                                                st_arr,
                                                                 targ_arr,
                                                                 current_step=split,
                                                                 pred_h=self.pred_h)
                 targ_i.shape = (1, pred_step_n, 5)
-                actions = self.policy.get_actions([st_i, cond_i], bc_der_i,
+                st_init = np.repeat(np.reshape(st_i[0,:], [1,17]), self.traj_n, axis=0)
+
+                actions = self.policy.get_actions([st_seq_i, cond_seq_i], bc_der_i,
                                         traj_n=self.traj_n, pred_h=self.pred_h)
+                st_pred = self.gen_model.forwardSim(st_init, actions, pred_step_n)
 
-                for vehact_indx in range(5):
-                    # veh_mlong, veh_mlat, veh_y, veh_f, veh_fadj
-                    truth_arrs[vehact_indx][_row:_row+self.traj_n, :] = targ_i[:,:,vehact_indx]
-                    pred_arrs[vehact_indx][_row:_row+self.traj_n, :] = actions[:,:,vehact_indx]
+                truth_arrs[0][_row:_row+self.traj_n, :] = \
+                                    st_i[:,self.gen_model.indx_m['vel']]
+                pred_arrs[0][_row:_row+self.traj_n, :] = \
+                                    st_pred[:,:,self.gen_model.indx_m['vel']]
+
+                truth_arrs[1][_row:_row+self.traj_n, :] = \
+                                    st_i[:,self.gen_model.indx_m['act_lat_p']]
+                pred_arrs[1][_row:_row+self.traj_n, :] = \
+                                    st_pred[:,:,self.gen_model.indx_m['act_lat_p']]
                 _row += self.traj_n
-
+                # return st_pred
             print('Episode ', episode_id, ' has been completed!')
         for key in rwse_dict.keys():
             rwse_dict[key] = self.root_weightet_sqr(truth_arrs[rwse_dict[key]], \
                                                         pred_arrs[rwse_dict[key]])
 
-
-        with open(self.dirName+'/rwse', "wb") as f:
+        with open(self.dirName+'/rwse_long_lat_vel', "wb") as f:
             pickle.dump(rwse_dict, f)
+        return rwse_dict
