@@ -125,7 +125,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-4')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -150,7 +150,7 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        skip_n = 10 # done for a smoother trajectory
+        skip_n = 1 # done for a smoother trajectory
         step_len = round(skip_n*data_obj.step_size*0.1, 1) # [s]
         steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(data_obj.step_size*0.1)))
 
@@ -238,8 +238,8 @@ class ModelEvaluation():
         target_arr = test_data.data_obj.applyActionScaler(target_arr)
         actions = [target_arr[:, n:n+1] for n in range(5)]
         traj_len = len(state_arr)
-        pred_step_n = self.pred_h*10
         step_size = test_data.data_obj.step_size
+        pred_step_n = int(np.ceil(self.pred_h/(step_size*0.1)))
         obs_n = test_data.data_obj.obs_n
         conds = [[],[],[],[],[]]
         states = []
@@ -309,13 +309,18 @@ class ModelEvaluation():
         """
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
-        rwse_dict = {'long_vel':0, 'lat_vel':1}
+        rwse_dict = {'vel_m':0,
+                    'lat_vel':1,
+                    'vel_y':2,
+                    'vel_f':3,
+                    'vel_fadj':4}
+
         pred_step_n = self.pred_h*10
         splits_n = 6 # number of splits across an entire trajectory
         pred_arrs = [np.zeros([self.episode_n*self.traj_n*6,
-                                                pred_step_n]) for i in range(2)]
+                                                pred_step_n]) for i in range(5)]
         truth_arrs = [np.zeros([self.episode_n*self.traj_n*6,
-                                                pred_step_n]) for i in range(2)]
+                                                pred_step_n]) for i in range(5)]
         _row = 0
 
         for episode_id in self.test_data.test_episodes[:self.episode_n]:
@@ -354,6 +359,23 @@ class ModelEvaluation():
                                     st_i[:,self.gen_model.indx_m['act_lat_p']]
                 pred_arrs[1][_row:_row+self.traj_n, :] = \
                                     st_pred[:,:,self.gen_model.indx_m['act_lat_p']]
+
+                truth_arrs[2][_row:_row+self.traj_n, :] = \
+                                    st_i[:,self.gen_model.indx_y['vel']]
+                pred_arrs[2][_row:_row+self.traj_n, :] = \
+                                    st_pred[:,:,self.gen_model.indx_y['vel']]
+
+                truth_arrs[3][_row:_row+self.traj_n, :] = \
+                                    st_i[:,self.gen_model.indx_f['vel']]
+                pred_arrs[3][_row:_row+self.traj_n, :] = \
+                                    st_pred[:,:,self.gen_model.indx_f['vel']]
+
+                truth_arrs[4][_row:_row+self.traj_n, :] = \
+                                    st_i[:,self.gen_model.indx_fadj['vel']]
+                pred_arrs[4][_row:_row+self.traj_n, :] = \
+                                    st_pred[:,:,self.gen_model.indx_fadj['vel']]
+
+
                 _row += self.traj_n
                 # return st_pred
             print('Episode ', episode_id, ' has been completed!')
