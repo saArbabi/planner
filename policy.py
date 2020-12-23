@@ -115,6 +115,7 @@ class MergePolicy():
     def __init__(self, config):
         self.loadModel(config)
         self.test_data = TestdataObj(config)
+        self.data_obj = self.test_data.data_obj
 
         # TODO:
         # objective function/ evaluate function/ set execution time, which will
@@ -130,13 +131,11 @@ class MergePolicy():
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
 
-
-    def get_actions(self, seq, bc_der, traj_n, pred_h):
+    def get_cae_outputs(self, seq, traj_n, pred_h):
+        """Output includes both samplred action sequences and their correspoinding
+            distributions.
+        :Param: [state_seq, cond_seq], traj_n, pred_h(s)
         """
-        :Param: [state_seq, cond_seq], bc_der, traj_n, pred_h(s)
-        :Return: unscaled action array for all cars
-        """
-        data_obj = self.test_data.data_obj
         st_seq, cond_seq = seq
         # reshape to fit model
         st_seq.shape = (1, st_seq.shape[0], st_seq.shape[1])
@@ -146,19 +145,50 @@ class MergePolicy():
             cond_seq[n] = np.repeat(cond_seq[n], traj_n, axis=0)
 
         st_seq = np.repeat(st_seq, traj_n, axis=0)
-        bc_der = np.repeat([bc_der], traj_n, axis=0)
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        skip_n = 1 # done for a smoother trajectory
-        step_len = round(skip_n*data_obj.step_size*0.1, 1) # [s]
-        steps_n = int(np.ceil(np.ceil(pred_h/step_len)*step_len/(data_obj.step_size*0.1)))
+        self.skip_n = 1 # done for a smoother trajectory
+        self.step_len = round(self.skip_n*self.data_obj.step_size*0.1, 1) # [s]
+        steps_n = int(np.ceil(np.ceil(pred_h/self.step_len)*self.step_len/ \
+                                                    (self.data_obj.step_size*0.1)))
 
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
 
-        act_mlon, act_mlat, act_y, act_f, act_fadj = self.dec_model([cond_seq, enc_state])
-        total_acts_count = traj_n*steps_n
+        sampled_actions, gmm_mlon, gmm_mlat = self.dec_model([cond_seq, enc_state])
+        return sampled_actions, gmm_mlon, gmm_mlat
+
+    def construct_policy(self, unscaled_acts, bc_der, traj_n, pred_h):
+        bc_der = np.repeat([bc_der], traj_n, axis=0)
+
+        # spline fitting
+        traj_len = self.dec_model.steps_n*self.data_obj.step_size*0.1 # [s]
+        trajectories = np.zeros([traj_n, int(traj_len*10)+1, 5])
+        x_whole = np.arange(0, traj_len+0.1, self.step_len)
+        x_snippet = np.arange(0, traj_len+0.1, 0.1)
+        # t0 = time.time()
+
+        for act_n in range(5):
+            f = CubicSpline(x_whole, unscaled_acts[:,:,act_n],
+                                bc_type=(
+                                (1, bc_der[:, act_n]),
+                                (2, [0]*traj_n)), axis=1)
+            coefs = np.stack(f.c, axis=2)
+            trajectories[:, :, act_n] = f(x_snippet)
+
+        # print(time.time() - t0)
+        return trajectories[:, 0:pred_h*10,:]
+
+    def get_actions(self, seq, bc_der, traj_n, pred_h):
+        """
+        :Return: unscaled action array for all cars
+        """
+        sampled_actions, gmm_mlon, gmm_mlat = self.get_cae_outputs(seq, traj_n, pred_h)
+        act_mlon, act_mlat, act_y, act_f, act_fadj = sampled_actions
+        st_seq, cond_seq = seq
+
+        total_acts_count = traj_n*self.dec_model.steps_n
         veh_acts_count = 5 # 2 for merging, 1 for each of the other cars
         scaled_acts = np.zeros([total_acts_count, veh_acts_count])
         i = 0
@@ -169,36 +199,17 @@ class MergePolicy():
 
             i += 1
 
-        unscaled_acts = data_obj.action_scaler.inverse_transform(scaled_acts)
-        unscaled_acts.shape = (traj_n, steps_n, veh_acts_count)
+        unscaled_acts = self.data_obj.action_scaler.inverse_transform(scaled_acts)
+        unscaled_acts.shape = (traj_n, self.dec_model.steps_n, veh_acts_count)
 
-        # conditional at the first step - used for vis
         cond0 = [cond_seq[n][0, 0, :].tolist() for n in range(5)]
         cond0 = np.array([item for sublist in cond0 for item in sublist])
-        cond0 = data_obj.action_scaler.inverse_transform(np.reshape(cond0, [1,-1]))
+        cond0 = self.data_obj.action_scaler.inverse_transform(np.reshape(cond0, [1,-1]))
         cond0.shape = (1, 1, 5)
         cond0 = np.repeat(cond0, traj_n, axis=0)
         unscaled_acts = np.concatenate([cond0, unscaled_acts], axis=1)
 
-        # spline fitting
-        actions = unscaled_acts[:,0::skip_n,:]
-        traj_len = steps_n*data_obj.step_size*0.1 # [s]
-        trajectories = np.zeros([traj_n, int(traj_len*10)+1, 5])
-        step_up = int(step_len*10)+1
-        x_whole = np.arange(0, traj_len+0.1, step_len)
-        x_snippet = np.arange(0, traj_len+0.1, 0.1)
-        # t0 = time.time()
-
-        for act_n in range(5):
-            f = CubicSpline(x_whole, actions[:,:,act_n],
-                                bc_type=(
-                                (1, bc_der[:, act_n]),
-                                (2, [0]*traj_n)), axis=1)
-            coefs = np.stack(f.c, axis=2)
-            trajectories[:, :, act_n] = f(x_snippet)
-
-        # print(time.time() - t0)
-        return trajectories[:, 0:pred_h*10,:]
+        return self.construct_policy(unscaled_acts[:,0::self.skip_n,:], bc_der, traj_n, pred_h)
 
 class TestdataObj():
     dirName = './datasets/preprocessed/'

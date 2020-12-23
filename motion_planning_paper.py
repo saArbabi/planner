@@ -13,17 +13,16 @@ import dill
 # config = loadConfig('series050exp001')
 # exp_to_evaluate = 'series054exp002'
 # exp_to_evaluate = 'series059exp002'
-exp_to_evaluate = 'series063exp001'
+exp_to_evaluate = 'series062exp015'
 config = loadConfig(exp_to_evaluate)
 # config = loadConfig('series044exp006')
 model = MergePolicy(config)
 eval_obj = ModelEvaluation(model, config)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
 
-step_sec = 1
-end_sec = 4
-pred_h = 4
-# st_pred = eval_obj.compute_rwse()
+
+
+st_pred = eval_obj.compute_rwse()
 # len(st_pred['lat_vel'])
 # %%
 exp_names = 'series062exp014'
@@ -74,18 +73,12 @@ plt.grid()
 # %%
 plt.plot(b)
 plt.plot(a)
+# %%
+"""Visualise distributions
+"""
+pred_h = 2
+st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2215)
 
-# %%
-state_n = 0
-for i in range(50):
-    plt.plot(st_pred[i,:,state_n], color='grey')
-plt.plot(_[:, state_n])
-plt.grid()
-# %%
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1289)
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
-pred_h = 4
-st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1289)
 st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                 cond_seq,
                                                 st_arr,
@@ -94,9 +87,30 @@ st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                 pred_h=pred_h)
 
 
-actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=10,
-                                                                pred_h=pred_h)
-actions.shape
+actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=50, pred_h=pred_h)
+##############
+act_n = 0
+# ground_truth = targ_arr[22:22+40, act_n][::3]
+ground_truth = targ_arr[20:20+40, act_n]
+action_range = np.linspace(-5, 5, num=200)
+fig_num = 0
+for time_step in range(40):
+    plt.figure()
+    likelihood_1 = gmm_mlons[0,time_step].prob(action_range)
+    likelihood_2 = gmm_mlons[1,time_step].prob(action_range)
+    # likelihood_3 = gmm_mlons[2,time_step].prob(action_range)
+    plt.plot(action_range, likelihood_1)
+    plt.scatter(actions[0,time_step,act_n], gmm_mlons[0,time_step].prob(
+                                    actions[0,time_step,act_n]), marker='x')
+
+    plt.plot(action_range, likelihood_2)
+    plt.scatter(actions[1,time_step,act_n], gmm_mlons[1,time_step].prob(
+                                    actions[1,time_step,act_n]), marker='x')
+
+    fig_num += 1
+    plt.title(str(fig_num))
+
+    plt.grid()
 # %%
 """How good is my planning and prediction?
 """
@@ -327,4 +341,3 @@ for episode_id in [2895, 1289]:
     vis(episode_id)
 # %%
 # eval_obj.compute_rwse()
- 
