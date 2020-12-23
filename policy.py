@@ -124,8 +124,8 @@ class MergePolicy():
         checkpoint_dir = './models/experiments/'+config['exp_id'] +'/model_dir'
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
-        # Checkpoint.restore(tf.train.latest_checkpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-4')
+        # Checkpoint.restore(tf.train.latest_checpoint(checkpoint_dir)).expect_partial()
+        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -328,7 +328,6 @@ class ModelEvaluation():
             st_seq, cond_seq, st_arr, targ_arr = self.episodeSetup(episode_id)
             self.gen_model.max_pc = max(st_arr[:, self.gen_model.indx_m['pc']])
             self.gen_model.min_pc = min(st_arr[:, self.gen_model.indx_m['pc']])
-
             if len(st_seq) >= 6:
                 splits_n = 6
             else:
