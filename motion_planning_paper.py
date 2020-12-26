@@ -13,22 +13,55 @@ import dill
 # config = loadConfig('series050exp001')
 # exp_to_evaluate = 'series054exp002'
 # exp_to_evaluate = 'series059exp002'
-exp_to_evaluate = 'series062exp015'
+exp_to_evaluate = 'series068exp001'
 config = loadConfig(exp_to_evaluate)
 # config = loadConfig('series044exp006')
-model = MergePolicy(config)
-eval_obj = ModelEvaluation(model, config)
+traffic_density = 'high_density_'
+test_data = TestdataObj(traffic_density, config)
+
+model = MergePolicy(test_data, config)
+eval_obj = ModelEvaluation(model, test_data, config)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
-
-
-
-st_pred = eval_obj.compute_rwse()
+st_pred = eval_obj.compute_rwse(traffic_density)
 # len(st_pred['lat_vel'])
 # %%
-exp_names = 'series062exp014'
-dirName = './models/experiments/'+exp_names
+exp_names_1 = 'series068exp001'
+dirName = './models/experiments/'+exp_names_1
 with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
-    rwse_exp = dill.load(f, ignore=True)
+    rwse_exp_1 = dill.load(f, ignore=True)
+
+exp_names_2 = 'series068exp007'
+dirName = './models/experiments/'+exp_names_2
+with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
+    rwse_exp_2 = dill.load(f, ignore=True)
+
+
+
+for key in rwse_exp_1.keys():
+    if key != 'lat_vel':
+        plt.figure()
+        legends = []
+        plt.plot(rwse_exp_1[key])
+        legends.append(key+'_'+exp_names_1)
+        plt.plot(rwse_exp_2[key])
+        legends.append(key+'_'+exp_names_2)
+
+        plt.legend(legends)
+        plt.grid()
+
+plt.figure()
+plt.plot(rwse_exp_1['lat_vel'])
+plt.plot(rwse_exp_2['lat_vel'])
+plt.legend([exp_names_1, exp_names_2])
+
+plt.grid()
+
+# %%
+plt.figure()
+plt.plot(rwse_exp['lat_vel'])
+plt.grid()
+
+# %%
 
 legends = []
 
@@ -42,26 +75,6 @@ plt.legend(legends)
 a = rwse_exp['vel_y']
 plt.grid()
 
-
-plt.figure()
-plt.plot(rwse_exp['lat_vel'])
-plt.grid()
-
-# %%
-exp_names = 'series062exp008'
-dirName = './models/experiments/'+exp_names
-with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
-    rwse_exp = dill.load(f, ignore=True)
-
-legends = []
-
-for key in rwse_exp.keys():
-    if key != 'lat_vel':
-        plt.plot(rwse_exp[key])
-        legends.append(key)
-plt.legend(legends)
-b = rwse_exp['vel_y']
-plt.grid()
 
 plt.figure()
 plt.plot(rwse_exp['lat_vel'])
@@ -88,6 +101,7 @@ st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
 
 
 actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=50, pred_h=pred_h)
+actions.shape
 ##############
 act_n = 0
 # ground_truth = targ_arr[22:22+40, act_n][::3]
@@ -305,6 +319,7 @@ for rwse_veh in ['long_vel', 'lat_vel']:
 # %%
 fig_num = 0
 pred_h = 4
+# for episode in [2895, 1289]:
 for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
     st_seq, cond_seq, _, targ_arr = eval_obj.episodeSetup(episode)
     st_i, cond_i, bc_der_i, _, _, targ_i = eval_obj.sceneSetup(st_seq,

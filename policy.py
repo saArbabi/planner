@@ -112,10 +112,9 @@ class GenModel():
         return state_predictions
 
 class MergePolicy():
-    def __init__(self, config):
+    def __init__(self, test_data, config):
         self.loadModel(config)
-        self.test_data = TestdataObj(config)
-        self.data_obj = self.test_data.data_obj
+        self.data_obj = test_data.data_obj
 
         # TODO:
         # objective function/ evaluate function/ set execution time, which will
@@ -148,7 +147,7 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        self.skip_n = 1 # done for a smoother trajectory
+        self.skip_n = 3 # done for a smoother trajectory
         self.step_len = round(self.skip_n*self.data_obj.step_size*0.1, 1) # [s]
         steps_n = int(np.ceil(np.ceil(pred_h/self.step_len)*self.step_len/ \
                                                     (self.data_obj.step_size*0.1)))
@@ -213,11 +212,14 @@ class MergePolicy():
 
 class TestdataObj():
     dirName = './datasets/preprocessed/'
-    def __init__(self, config):
+    def __init__(self, traffic_density, config):
+        self.traffic_density = traffic_density
         self.setup(config['data_config']) # load test_data and validation data
 
     def setup(self, data_config):
-        self.test_episodes = np.loadtxt('./datasets/test_episodes.csv', delimiter=',')
+        self.test_episodes = np.loadtxt('./datasets/'+self.traffic_density+\
+                                    'test_episodes.csv', delimiter=',')
+
         config_names = os.listdir(self.dirName+'config_files')
         for config_name in config_names:
             with open(self.dirName+'config_files/'+config_name, 'r') as f:
@@ -227,16 +229,18 @@ class TestdataObj():
                 with open(self.dirName+config_name[:-5]+'/'+'data_obj', 'rb') as f:
                     self.data_obj = dill.load(f, ignore=True)
 
-                with open(self.dirName+config_name[:-5]+'/'+'states_test', 'rb') as f:
+                with open(self.dirName+config_name[:-5]+'/'+self.traffic_density+\
+                                                            'states_test', 'rb') as f:
                     self.states_set = pickle.load(f)
 
-                with open(self.dirName+config_name[:-5]+'/'+'targets_test', 'rb') as f:
+                with open(self.dirName+config_name[:-5]+'/'+self.traffic_density+\
+                                                            'targets_test', 'rb') as f:
                     self.targets_set = pickle.load(f)
 
 class ModelEvaluation():
-    def __init__(self, model, config):
+    def __init__(self, model, test_data, config):
         self.policy = model
-        self.test_data = TestdataObj(config)
+        self.test_data = test_data
         self.gen_model = GenModel()
         self.episode_n = 50
         self.traj_n = 50
@@ -316,7 +320,7 @@ class ModelEvaluation():
         state_true = st_arr[0:29+self.pred_h]
         return state_true, state_predictions
 
-    def compute_rwse(self):
+    def compute_rwse(self, traffic_density):
         """
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
@@ -393,6 +397,6 @@ class ModelEvaluation():
             rwse_dict[key] = self.root_weightet_sqr(truth_arrs[rwse_dict[key]], \
                                                         pred_arrs[rwse_dict[key]])
 
-        with open(self.dirName+'/rwse_long_lat_vel', "wb") as f:
+        with open(self.dirName+'/'+ traffic_density + 'rwse', "wb") as f:
             pickle.dump(rwse_dict, f)
         return rwse_dict
