@@ -324,6 +324,13 @@ class ModelEvaluation():
         """
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
+        # Ensure experiment has not beem done before
+
+        file_names = os.listdir(self.dirName)
+        if traffic_density+'rwse' in file_names:
+            print("This experiment has been done already!")
+            return None
+
         rwse_dict = {'vel_m':0,
                     'lat_vel':1,
                     'vel_y':2,

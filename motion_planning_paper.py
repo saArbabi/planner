@@ -13,10 +13,11 @@ import dill
 # config = loadConfig('series050exp001')
 # exp_to_evaluate = 'series054exp002'
 # exp_to_evaluate = 'series059exp002'
-exp_to_evaluate = 'series068exp001'
+exp_to_evaluate = 'series068exp002'
 config = loadConfig(exp_to_evaluate)
 # config = loadConfig('series044exp006')
-traffic_density = 'high_density_'
+traffic_density = 'low_density_'
+# traffic_density = 'high_density_'
 test_data = TestdataObj(traffic_density, config)
 
 model = MergePolicy(test_data, config)
@@ -24,27 +25,31 @@ eval_obj = ModelEvaluation(model, test_data, config)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
 st_pred = eval_obj.compute_rwse(traffic_density)
 # len(st_pred['lat_vel'])
+
+
 # %%
 exp_names_1 = 'series068exp001'
-dirName = './models/experiments/'+exp_names_1
-with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
+traffic_density_1 = 'high_density_'
+dirName = './models/experiments/'+exp_names_1+'/'+traffic_density_1+'rwse'
+
+with open(dirName, 'rb') as f:
     rwse_exp_1 = dill.load(f, ignore=True)
 
-exp_names_2 = 'series068exp007'
-dirName = './models/experiments/'+exp_names_2
-with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
+
+exp_names_2 = 'series068exp001'
+traffic_density_2 = 'low_density_'
+dirName = './models/experiments/'+exp_names_2+'/'+traffic_density_2+'rwse'
+with open(dirName, 'rb') as f:
     rwse_exp_2 = dill.load(f, ignore=True)
-
-
 
 for key in rwse_exp_1.keys():
     if key != 'lat_vel':
         plt.figure()
         legends = []
         plt.plot(rwse_exp_1[key])
-        legends.append(key+'_'+exp_names_1)
+        legends.append(key+'_'+exp_names_1+'_'+traffic_density_1)
         plt.plot(rwse_exp_2[key])
-        legends.append(key+'_'+exp_names_2)
+        legends.append(key+'_'+exp_names_2+'_'+traffic_density_2)
 
         plt.legend(legends)
         plt.grid()
@@ -52,7 +57,7 @@ for key in rwse_exp_1.keys():
 plt.figure()
 plt.plot(rwse_exp_1['lat_vel'])
 plt.plot(rwse_exp_2['lat_vel'])
-plt.legend([exp_names_1, exp_names_2])
+plt.legend([traffic_density_1, traffic_density_2])
 
 plt.grid()
 
