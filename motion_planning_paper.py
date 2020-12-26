@@ -13,7 +13,7 @@ import dill
 # config = loadConfig('series050exp001')
 # exp_to_evaluate = 'series054exp002'
 # exp_to_evaluate = 'series059exp002'
-exp_to_evaluate = 'series068exp002'
+exp_to_evaluate = 'series068exp001'
 config = loadConfig(exp_to_evaluate)
 # config = loadConfig('series044exp006')
 traffic_density = 'low_density_'
@@ -29,14 +29,16 @@ st_pred = eval_obj.compute_rwse(traffic_density)
 
 # %%
 exp_names_1 = 'series068exp001'
-traffic_density_1 = 'high_density_'
+# traffic_density_1 = 'high_density_'
+traffic_density_1 = 'low_density_'
 dirName = './models/experiments/'+exp_names_1+'/'+traffic_density_1+'rwse'
 
 with open(dirName, 'rb') as f:
     rwse_exp_1 = dill.load(f, ignore=True)
 
 
-exp_names_2 = 'series068exp001'
+exp_names_2 = 'series068exp002'
+# traffic_density_2 = 'high_density_'
 traffic_density_2 = 'low_density_'
 dirName = './models/experiments/'+exp_names_2+'/'+traffic_density_2+'rwse'
 with open(dirName, 'rb') as f:
