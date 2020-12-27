@@ -10,36 +10,32 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-# config = loadConfig('series050exp001')
-# exp_to_evaluate = 'series054exp002'
-# exp_to_evaluate = 'series059exp002'
-exp_to_evaluate = 'series068exp001'
+exp_to_evaluate = 'series067exp001'
 config = loadConfig(exp_to_evaluate)
-# config = loadConfig('series044exp006')
-traffic_density = 'low_density_'
-# traffic_density = 'high_density_'
+# traffic_density = ''
+traffic_density = 'high_density_'
+# traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
-# st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2895)
-st_pred = eval_obj.compute_rwse(traffic_density)
-# len(st_pred['lat_vel'])
+eval_obj.compute_rwse(traffic_density)
 
 
 # %%
-exp_names_1 = 'series068exp001'
-# traffic_density_1 = 'high_density_'
-traffic_density_1 = 'low_density_'
+# exp_names_1 = 'series066exp003'
+exp_names_1 = 'series067exp001'
+traffic_density_1 = 'high_density_'
+# traffic_density_1 = 'low_density_'
 dirName = './models/experiments/'+exp_names_1+'/'+traffic_density_1+'rwse'
 
 with open(dirName, 'rb') as f:
     rwse_exp_1 = dill.load(f, ignore=True)
 
 
-exp_names_2 = 'series068exp002'
-# traffic_density_2 = 'high_density_'
-traffic_density_2 = 'low_density_'
+exp_names_2 = 'series066exp003'
+traffic_density_2 = 'high_density_'
+# traffic_density_2 = 'low_density_'
 dirName = './models/experiments/'+exp_names_2+'/'+traffic_density_2+'rwse'
 with open(dirName, 'rb') as f:
     rwse_exp_2 = dill.load(f, ignore=True)
@@ -212,7 +208,7 @@ for time_step in range(19, 40, 5):
         axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
         if act_n < 2:
             axs[act_n].plot(np.arange(0, pred_h, 0.1), avg_traj, color='purple')
-            axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
+            # axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
         for trj in range(50):
             axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3)
 
