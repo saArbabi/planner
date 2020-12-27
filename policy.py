@@ -229,12 +229,19 @@ class TestdataObj():
                 with open(self.dirName+config_name[:-5]+'/'+'data_obj', 'rb') as f:
                     self.data_obj = dill.load(f, ignore=True)
 
+            if self.traffic_density == '':
                 with open(self.dirName+config_name[:-5]+'/'+self.traffic_density+\
                                                             'states_test', 'rb') as f:
                     self.states_set = pickle.load(f)
 
                 with open(self.dirName+config_name[:-5]+'/'+self.traffic_density+\
                                                             'targets_test', 'rb') as f:
+                    self.targets_set = pickle.load(f)
+            else:
+                with open(self.dirName+self.traffic_density+'states_test', 'rb') as f:
+                    self.states_set = pickle.load(f)
+
+                with open(self.dirName+self.traffic_density+'targets_test', 'rb') as f:
                     self.targets_set = pickle.load(f)
 
 class ModelEvaluation():
