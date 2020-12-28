@@ -10,21 +10,22 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series067exp001'
+exp_to_evaluate = 'series072exp004'
 config = loadConfig(exp_to_evaluate)
-# traffic_density = ''
+traffic_density = ''
 traffic_density = 'high_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
-eval_obj.compute_rwse(traffic_density)
+# eval_obj.compute_rwse(traffic_density)
+
 
 
 # %%
 # exp_names_1 = 'series066exp003'
-exp_names_1 = 'series067exp001'
+exp_names_1 = 'series072exp004'
 traffic_density_1 = 'high_density_'
 # traffic_density_1 = 'low_density_'
 dirName = './models/experiments/'+exp_names_1+'/'+traffic_density_1+'rwse'
@@ -33,7 +34,7 @@ with open(dirName, 'rb') as f:
     rwse_exp_1 = dill.load(f, ignore=True)
 
 
-exp_names_2 = 'series066exp003'
+exp_names_2 = 'series072exp003'
 traffic_density_2 = 'high_density_'
 # traffic_density_2 = 'low_density_'
 dirName = './models/experiments/'+exp_names_2+'/'+traffic_density_2+'rwse'
