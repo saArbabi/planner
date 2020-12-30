@@ -125,7 +125,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-16')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-6')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -312,6 +312,8 @@ class ModelEvaluation():
         true_traj = true_traj[~np.all(true_traj == 0, axis=1)]
         pred_trajs = pred_trajs[~np.all(pred_trajs == 0, axis=1)]
         err = np.sqrt(np.mean(np.square(true_traj-pred_trajs), axis=0))
+        print('Total number of generated trajs: ', pred_trajs.shape)
+
         return err
 
     def trajCompute(self, episode_id):
@@ -332,12 +334,14 @@ class ModelEvaluation():
         dumps dict into exp folder containing RWSE for all vehicle actions across time.
         """
         # Ensure experiment has not beem done before
-
+        np.random.seed(2020)
         file_names = os.listdir(self.dirName)
         if traffic_density+'rwse' in file_names:
             print("This experiment has been done already!")
             return None
-
+        elif traffic_density == '':
+            print("select a traffic dinsity level!")
+            return None
         rwse_dict = {'vel_m':0,
                     'lat_vel':1,
                     'vel_y':2,

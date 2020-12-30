@@ -10,86 +10,74 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series072exp004'
+exp_to_evaluate = 'series079exp003'
 config = loadConfig(exp_to_evaluate)
-traffic_density = ''
+# traffic_density = ''
 traffic_density = 'high_density_'
+# traffic_density = 'medium_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
-# eval_obj.compute_rwse(traffic_density)
-
-
+eval_obj.compute_rwse(traffic_density)
 
 # %%
-# exp_names_1 = 'series066exp003'
-exp_names_1 = 'series072exp004'
-traffic_density_1 = 'high_density_'
-# traffic_density_1 = 'low_density_'
-dirName = './models/experiments/'+exp_names_1+'/'+traffic_density_1+'rwse'
-
-with open(dirName, 'rb') as f:
-    rwse_exp_1 = dill.load(f, ignore=True)
-
-
-exp_names_2 = 'series072exp003'
-traffic_density_2 = 'high_density_'
-# traffic_density_2 = 'low_density_'
-dirName = './models/experiments/'+exp_names_2+'/'+traffic_density_2+'rwse'
-with open(dirName, 'rb') as f:
-    rwse_exp_2 = dill.load(f, ignore=True)
-
-for key in rwse_exp_1.keys():
-    if key != 'lat_vel':
-        plt.figure()
-        legends = []
-        plt.plot(rwse_exp_1[key])
-        legends.append(key+'_'+exp_names_1+'_'+traffic_density_1)
-        plt.plot(rwse_exp_2[key])
-        legends.append(key+'_'+exp_names_2+'_'+traffic_density_2)
-
-        plt.legend(legends)
-        plt.grid()
-
-plt.figure()
-plt.plot(rwse_exp_1['lat_vel'])
-plt.plot(rwse_exp_2['lat_vel'])
-plt.legend([traffic_density_1, traffic_density_2])
-
-plt.grid()
-
-# %%
-plt.figure()
-plt.plot(rwse_exp['lat_vel'])
-plt.grid()
-
-# %%
-
-legends = []
-
-for key in rwse_exp.keys():
-    if key != 'lat_vel':
-        plt.plot(rwse_exp[key])
-        legends.append(key)
-
-
-plt.legend(legends)
-a = rwse_exp['vel_y']
-plt.grid()
-
-
-plt.figure()
-plt.plot(rwse_exp['lat_vel'])
-plt.grid()
-
+# np.random.seed(2020)
+plt.plot(targ_i[:, 0])
+plt.plot(targ_i[:, 0]+0.1)
+plt.plot(targ_i[:, 0]-0.3)
 # %%
 
 
+exps = [
+        # 'series076exp001',
+        # 'series072exp001',
+        'series077exp001',
+        # 'series077exp002',
+        # 'series077exp003',
+        'series079exp003',
+        ]
+# densities = ['high_density_', 'low_density_', 'medium_density_']
+densities = ['low_density_','medium_density_', 'high_density_']
+# densities = ['high_density_', 'medium_density_']
+# densities = ['high_density_']
+# densities = ['medium_density_']
+rwses = {}
+for exp_i in range(len(exps)):
+    for density_i in range(len(densities)):
+        dirName = './models/experiments/'+exps[exp_i]+'/'+densities[density_i]+'rwse'
+        with open(dirName, 'rb') as f:
+            rwses[exps[exp_i]+densities[density_i]] = dill.load(f, ignore=True)
+
 # %%
-plt.plot(b)
-plt.plot(a)
+exps = [
+        'series077exp001',
+        # 'series078exp001',
+        'series079exp003',
+        # 'series077exp002',
+        ]
+densities = ['high_density_']
+# densities = ['low_density_']
+# densities = ['medium_density_']
+# densities = ['medium_density_', 'high_density_']
+# densities = ['low_density_','medium_density_', 'high_density_']
+exp_names = []
+for exp in exps:
+    for density in densities:
+        exp_names.append(exp+density)
+for key in ['vel_m','lat_vel','vel_y','vel_f','vel_fadj']:
+    legends = []
+    plt.figure()
+    for exp_name in exp_names:
+        plt.plot(rwses[exp_name][key])
+        legends.append(key+'_'+exp_name)
+    plt.legend(legends)
+    plt.grid()
+
+
+# %%
+
 # %%
 """Visualise distributions
 """
@@ -161,7 +149,6 @@ st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2215)
 
 pred_h = 2
 for time_step in range(19, 40, 5):
-
     st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
                                                     st_arr,
