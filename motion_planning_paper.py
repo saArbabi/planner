@@ -28,17 +28,16 @@ eval_obj.compute_rwse(traffic_density)
 # %%
 """Compare rwse for different architectures and traffic densities
 """
+discount_factor = 0.9
+gamma = np.power(discount_factor, np.array(range(0,20)))
 
 exps = [
         'series077exp001', # baseline
         'series078exp001', # only target car in conditional = to show interactions mater
         'series079exp002', # no teacher helping - to show it maters
         ]
-# densities = ['high_density_', 'low_density_', 'medium_density_']
 densities = ['low_density_','medium_density_', 'high_density_']
-# densities = ['high_density_', 'medium_density_']
-# densities = ['high_density_']
-# densities = ['medium_density_']
+
 rwses = {}
 for exp_i in range(len(exps)):
     for density_i in range(len(densities)):
@@ -49,19 +48,27 @@ for exp_i in range(len(exps)):
 # %%
 exps = [
         'series077exp001',
-        # 'series078exp001',
-        'series079exp003',
-        # 'series077exp002',
+        'series078exp001',
+        'series079exp002',
         ]
 densities = ['high_density_']
-# densities = ['low_density_']
-# densities = ['medium_density_']
-# densities = ['medium_density_', 'high_density_']
-# densities = ['low_density_','medium_density_', 'high_density_']
+densities = ['low_density_']
+densities = ['medium_density_']
+
+discounted_exp_results = {}
 exp_names = []
 for exp in exps:
     for density in densities:
         exp_names.append(exp+density)
+
+for exp_name in exp_names:
+    discounted_exp_results[exp_name] = []
+
+    for key in ['vel_m','lat_vel','vel_y','vel_fadj', 'vel_f']:
+        discounted_exp_results[exp_name].append(np.sum(rwses[exp_name][key]*gamma))
+# %%
+"""To visualise rwse against prediction horizon
+"""
 for key in ['vel_m','lat_vel','vel_y','vel_f','vel_fadj']:
     legends = []
     plt.figure()
@@ -70,7 +77,35 @@ for key in ['vel_m','lat_vel','vel_y','vel_f','vel_fadj']:
         legends.append(key+'_'+exp_name)
     plt.legend(legends)
     plt.grid()
+# %%
+"""Bar chart visualistation
+"""
+labels = ['$\dot x_{0}$', '$\dot y_{0}$', '$\dot x_{1}$', '$\dot x_{2}$', '$\dot x_{3}$']
+exp1 = discounted_exp_results[exp_names[0]]
+exp2 = discounted_exp_results[exp_names[1]]
+exp3 = discounted_exp_results[exp_names[2]]
 
+x = np.arange(len(labels))  # the label locations
+width = 0.2  # the width of the bars
+
+fig, ax = plt.subplots()
+rects1 = ax.bar(x, exp1, width,
+                                color='lightgrey', edgecolor='black', hatch='//')
+rects2 = ax.bar(x + width, exp2, width,
+                                color='grey', edgecolor='black')
+rects2 = ax.bar(x - width, exp3, width,
+                                color='grey', edgecolor='black', hatch='//')
+# Add some text for labels, title and custom x-axis tick labels, etc.
+ax.set_ylabel('Time discounted RWSE')
+ax.set_xticks(x)
+ax.set_xticklabels(labels)
+ax.grid(axis='y', alpha=0.3)
+
+
+fig.tight_layout()
+
+plt.show()
+fig.savefig("medium_density_performance.png", dpi=200)
 
 # %%
 
