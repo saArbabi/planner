@@ -10,7 +10,7 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series077exp001'
+exp_to_evaluate = 'series079exp002'
 config = loadConfig(exp_to_evaluate)
 traffic_density = ''
 # traffic_density = 'high_density_'
@@ -24,21 +24,15 @@ eval_obj.compute_rwse(traffic_density)
 # actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
 # prob_mlon.shape
 
-# %%
-# np.random.seed(2020)
-plt.plot(targ_i[:, 0])
-plt.plot(targ_i[:, 0]+0.01)
-plt.plot(targ_i[:, 0]-0.3)
-# %%
 
+# %%
+"""Compare rwse for different architectures and traffic densities
+"""
 
 exps = [
-        # 'series076exp001',
-        # 'series072exp001',
-        'series077exp001',
-        # 'series077exp002',
-        # 'series077exp003',
-        'series079exp003',
+        'series077exp001', # baseline
+        'series078exp001', # only target car in conditional = to show interactions mater
+        'series079exp002', # no teacher helping - to show it maters
         ]
 # densities = ['high_density_', 'low_density_', 'medium_density_']
 densities = ['low_density_','medium_density_', 'high_density_']
@@ -254,7 +248,7 @@ for time_step in [19, 29, 39]:
                 axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3)
                 # axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3, alpha=0.3)
     time_frame += 1
-plt.savefig("scene_evolution.png", dpi=200)
+# plt.savefig("scene_evolution.png", dpi=200)
 # %%
 
 from scipy.ndimage.filters import gaussian_filter
