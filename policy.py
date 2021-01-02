@@ -179,7 +179,7 @@ class MergePolicy():
             trajectories[:, :, act_n] = f(x_snippet)
 
         # print(time.time() - t0)
-        return trajectories[:, 0:pred_h*10,:]
+        return trajectories[:, 0:pred_h*10+1,:]
 
     def get_actions(self, seq, bc_der, traj_n, pred_h):
         """
@@ -306,8 +306,8 @@ class ModelEvaluation():
 
         cond_seq_i = [cond_seq[n][start_step,:,:] for n in range(5)]
         history_i = targ_arr[start_step:current_step+1, :]
-        targ_i = targ_arr[current_step:end_step, :]
-        st_i = st_arr[current_step:end_step, :]
+        targ_i = targ_arr[current_step:end_step+1, :]
+        st_i = st_arr[current_step:end_step+1, :]
         return st_seq_i, cond_seq_i, bc_der_i, history_i, st_i, targ_i
 
     def root_weightet_sqr(self, true_traj, pred_trajs):

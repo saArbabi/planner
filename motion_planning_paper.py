@@ -21,8 +21,8 @@ test_data = TestdataObj(traffic_density, config)
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
 eval_obj.compute_rwse(traffic_density)
-actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
-prob_mlon.shape
+# actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
+# prob_mlon.shape
 
 # %%
 # np.random.seed(2020)
@@ -128,12 +128,12 @@ trajs.shape
 avg_traj = np.mean(trajs, axis=0)
 st_dev = np.std(trajs, axis=0)
 for trj in range(10):
-    plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), actions[trj,:,act_n], color='grey')
-plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj)
+    plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey')
+plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), avg_traj)
 
 plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
-plt.plot(np.arange(1.9, 1.9+pred_h, 0.1), targ_i[:, act_n], color='red')
-plt.fill_between(np.arange(1.9, 1.9+pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev)
+plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), targ_i[:, act_n], color='red')
+plt.fill_between(np.arange(1.9, 1.9+pred_h+0.1, 0.1), avg_traj+st_dev, avg_traj-st_dev)
 plt.grid()
 # %%
 """ scene evolution plots
@@ -159,12 +159,12 @@ def choose_traj(actions, prob_mlon, prob_mlat):
         Note: cost componetns are normalized.
     """
     discount_factor = 0.9
-    gamma = np.power(discount_factor, np.array(range(0,19)))
+    gamma = np.power(discount_factor, np.array(range(0,20)))
 
     jerk_m_long = (actions[:,1:,0]-actions[:,:-1,0])**2
     jerk_m_lat = (actions[:,1:,1]-actions[:,:-1,1])**2
     jerk_y = (actions[:,1:,2]-actions[:,:-1,2])**2
-    jerk_weight = 1/100
+    jerk_weight = 1/500
     total_cost = jerk_weight*jerk_m_long + jerk_weight*jerk_m_lat + jerk_weight*jerk_y
     likelihoods = np.sum(prob_mlon, axis=1).flatten()+np.sum(prob_mlat, axis=1)[:,:].flatten()
     discounted_cost = np.sum(total_cost*gamma, axis=1)+1/likelihoods
@@ -182,8 +182,10 @@ fadj_speed_indx = eval_obj.gen_model.indx_fadj['vel']
 y_dx_indx = eval_obj.gen_model.indx_y['dx']
 f_dx_indx = eval_obj.gen_model.indx_f['dx']
 fadj_dx_indx = eval_obj.gen_model.indx_fadj['dx']
-
-
+fig, axs = plt.subplots(3, 5, figsize=(30,12))
+fig.tight_layout()
+fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=None, hspace=0.3)
+time_frame = 0
 for time_step in [19, 29, 39]:
 # for time_step in [19]:
     st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
@@ -194,10 +196,8 @@ for time_step in [19, 29, 39]:
                                                     pred_h=pred_h)
 
 
-    actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
+    actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=100, pred_h=pred_h)
     best_traj = choose_traj(actions, prob_mlon, prob_mlat)
-    fig, axs = plt.subplots(1, 5, figsize=(20,3))
-    fig.subplots_adjust(wspace=0.05, hspace=0)
     titles = [
             'Vehicle $v_{0}$,'+
                 ' $\dot x_{0}:$'+str(round(st_arr[time_step, m_speed_indx], 1))+'$ms^{-1},$',
@@ -215,41 +215,46 @@ for time_step in [19, 29, 39]:
             ]
 
     for ax_i in range(5):
-        axs[ax_i].set_ylim([-3,3])
-        axs[ax_i].set_xlim([-1.9,2.2])
-        axs[ax_i].spines['right'].set_visible(False)
-        axs[ax_i].spines['top'].set_visible(False)
-        axs[ax_i].xaxis.get_major_ticks()[1].label1.set_visible(False)
-        axs[ax_i].xaxis.get_major_ticks()[1].label2.set_visible(False)
-        axs[ax_i].grid()
+        axs[time_frame, ax_i].set_ylim([-2,2])
+        axs[time_frame, ax_i].set_xlim([-1.9,2.2])
+        axs[time_frame, ax_i].spines['right'].set_visible(False)
+        axs[time_frame, ax_i].spines['top'].set_visible(False)
+        axs[time_frame, ax_i].xaxis.get_major_ticks()[1].label1.set_visible(False)
+        axs[time_frame, ax_i].xaxis.get_major_ticks()[2].label1.set_visible(False)
+        axs[time_frame, ax_i].xaxis.get_major_ticks()[3].label1.set_visible(False)
+        axs[time_frame, ax_i].grid()
         if ax_i == 1:
-            axs[ax_i].set_ylabel('Lateral action [$ms^{-1}$]', labelpad=-5)
+            axs[time_frame, ax_i].set_ylabel('Lateral action [$ms^{-1}$]')
+            # axs[time_frame, ax_i].set_ylabel('Lateral action [$ms^{-1}$]', labelpad=-5)
         else:
-            axs[ax_i].set_ylabel('Longitudinal action [$ms^{-2}$]', labelpad=-5)
-        axs[ax_i].set_xlabel('Time [s]')
-
-        if ax_i>0:
-            # axs[ax_i].set_yticks([])
-            axs[ax_i].set_yticklabels([])
+            axs[time_frame, ax_i].set_ylabel('Longitudinal action [$ms^{-2}$]')
+            # axs[time_frame, ax_i].set_ylabel('Longitudinal action [$ms^{-2}$]', labelpad=-5)
+        axs[time_frame, ax_i].set_xlabel('Time [s]')
+        #
+        # if time_frame!=2:
+        #     # axs[time_frame, ax_i].set_yticks([])
+        #     axs[time_frame, ax_i].set_xticklabels([])
 
     for act_n in range(5):
 
-        axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
-        axs[act_n].title.set_text(titles[act_n])
-        axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red', linestyle='--')
-        axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
+        axs[time_frame, act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
+        axs[time_frame, act_n].title.set_text(titles[act_n])
+        axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), targ_i[:, act_n], color='red', linestyle='--')
+        axs[time_frame, act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
         if act_n < 2:
             trajs = actions[:,:,act_n]
             st_dev = np.std(trajs, axis=0)
             avg_traj = np.mean(trajs, axis=0)
-            axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[best_traj,:,act_n], color='green', linestyle='--')
-            axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='orange', alpha=0.3)
-            # axs[act_n].plot(np.arange(0, pred_h, 0.1), avg_traj, color='purple')
+            axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), actions[best_traj,:,act_n], color='green', linestyle='--')
+            axs[time_frame, act_n].fill_between(np.arange(0, pred_h+0.1, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='orange', alpha=0.3)
+            # axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), avg_traj, color='purple')
 
         else:
             for trj in range(50):
-                axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3, alpha=0.3)
-# plt.savefig("scene_evolution.PNG", dpi=2000)
+                axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3)
+                # axs[time_frame, act_n].plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3, alpha=0.3)
+    time_frame += 1
+plt.savefig("scene_evolution.png", dpi=200)
 # %%
 
 from scipy.ndimage.filters import gaussian_filter
@@ -292,11 +297,11 @@ fig.subplots_adjust(wspace=0.05, hspace=0)
 for ax_i in range(3):
     axs[0,0].set_ylim([3,-3])
     axs[1].set_xlim([0,6.5])
-    # axs[ax_i].spines['right'].set_visible(False)
-    # axs[ax_i].spines['top'].set_visible(False)
+    # axs[time_frame, ax_i].spines['right'].set_visible(False)
+    # axs[time_frame, ax_i].spines['top'].set_visible(False)
     if ax_i>0:
-        # axs[ax_i].set_yticks([])
-        axs[ax_i].set_yticklabels([])
+        # axs[time_frame, ax_i].set_yticks([])
+        axs[time_frame, ax_i].set_yticklabels([])
 
 
 # %%
@@ -370,10 +375,10 @@ for episode in [2895, 1289, 1037]:
 
     for act_n in range(5):
         plt.figure()
-        plt.plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
+        plt.plot(np.arange(0, pred_h+0.1, 0.1), targ_i[:, act_n], color='red')
 
         for trj in range(10):
-            plt.plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey')
+            plt.plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey')
 
         plt.grid()
         plt.title(str(fig_num)+'-'+exp_to_evaluate)
