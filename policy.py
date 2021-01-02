@@ -154,9 +154,11 @@ class MergePolicy():
 
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
-
-        sampled_actions, gmm_mlon, gmm_mlat = self.dec_model([cond_seq, enc_state])
-        return sampled_actions, gmm_mlon, gmm_mlat
+        sampled_actions, gmm_mlon, gmm_mlat, prob_mlon, prob_mlat = self.dec_model(\
+                                                                [cond_seq, enc_state])
+        prob_mlon = prob_mlon.numpy()
+        prob_mlat = prob_mlat.numpy()
+        return sampled_actions, gmm_mlon, gmm_mlat, prob_mlon, prob_mlat
 
     def construct_policy(self, unscaled_acts, bc_der, traj_n, pred_h):
         bc_der = np.repeat([bc_der], traj_n, axis=0)
@@ -183,7 +185,7 @@ class MergePolicy():
         """
         :Return: unscaled action array for all cars
         """
-        sampled_actions, gmm_mlon, gmm_mlat = self.get_cae_outputs(seq, traj_n, pred_h)
+        sampled_actions, _, _, prob_mlon, prob_mlat = self.get_cae_outputs(seq, traj_n, pred_h)
         act_mlon, act_mlat, act_y, act_f, act_fadj = sampled_actions
         st_seq, cond_seq = seq
 
@@ -207,8 +209,8 @@ class MergePolicy():
         cond0.shape = (1, 1, 5)
         cond0 = np.repeat(cond0, traj_n, axis=0)
         unscaled_acts = np.concatenate([cond0, unscaled_acts], axis=1)
-
-        return self.construct_policy(unscaled_acts[:,0::self.skip_n,:], bc_der, traj_n, pred_h)
+        actions = self.construct_policy(unscaled_acts[:,0::self.skip_n,:], bc_der, traj_n, pred_h)
+        return actions, prob_mlon, prob_mlat
 
 class TestdataObj():
     dirName = './datasets/preprocessed/'

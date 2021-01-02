@@ -10,10 +10,10 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series079exp003'
+exp_to_evaluate = 'series077exp001'
 config = loadConfig(exp_to_evaluate)
-# traffic_density = ''
-traffic_density = 'high_density_'
+traffic_density = ''
+# traffic_density = 'high_density_'
 # traffic_density = 'medium_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
@@ -21,11 +21,13 @@ test_data = TestdataObj(traffic_density, config)
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
 eval_obj.compute_rwse(traffic_density)
+actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
+prob_mlon.shape
 
 # %%
 # np.random.seed(2020)
 plt.plot(targ_i[:, 0])
-plt.plot(targ_i[:, 0]+0.1)
+plt.plot(targ_i[:, 0]+0.01)
 plt.plot(targ_i[:, 0]-0.3)
 # %%
 
@@ -92,7 +94,7 @@ st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                 pred_h=pred_h)
 
 
-actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=50, pred_h=pred_h)
+actions = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
 actions.shape
 ##############
 act_n = 0
@@ -143,12 +145,47 @@ for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
     plt.grid()
     plt.title(str(episode))
 # %%
+
+
+cost_terms = [jerk_m_long, jerk_m_lat, jerk_y, traj_deviation_long, \
+                                                                traj_deviation_lat]
+
+# %%
+def choose_traj(actions, prob_mlon, prob_mlat):
+    """Returns the index of the chosen traj
+        Criteria:
+        - yield and merge vehicle jerk
+        - likelihood of merge vehicle actions based on the [trajectory] distribution.
+        Note: cost componetns are normalized.
+    """
+    discount_factor = 0.9
+    gamma = np.power(discount_factor, np.array(range(0,19)))
+
+    jerk_m_long = (actions[:,1:,0]-actions[:,:-1,0])**2
+    jerk_m_lat = (actions[:,1:,1]-actions[:,:-1,1])**2
+    jerk_y = (actions[:,1:,2]-actions[:,:-1,2])**2
+    jerk_weight = 1/100
+    total_cost = jerk_weight*jerk_m_long + jerk_weight*jerk_m_lat + jerk_weight*jerk_y
+    likelihoods = np.sum(prob_mlon, axis=1).flatten()+np.sum(prob_mlat, axis=1)[:,:].flatten()
+    discounted_cost = np.sum(total_cost*gamma, axis=1)+1/likelihoods
+    chosen_traj = np.where(discounted_cost==min(discounted_cost))
+    return int(chosen_traj[0])
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(1037)
 # st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2765)
 st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(2215)
-
 pred_h = 2
-for time_step in range(19, 40, 5):
+m_speed_indx = eval_obj.gen_model.indx_m['vel']
+m_pc_indx = eval_obj.gen_model.indx_m['pc']
+y_speed_indx = eval_obj.gen_model.indx_y['vel']
+f_speed_indx = eval_obj.gen_model.indx_f['vel']
+fadj_speed_indx = eval_obj.gen_model.indx_fadj['vel']
+y_dx_indx = eval_obj.gen_model.indx_y['dx']
+f_dx_indx = eval_obj.gen_model.indx_f['dx']
+fadj_dx_indx = eval_obj.gen_model.indx_fadj['dx']
+
+
+for time_step in [19, 29, 39]:
+# for time_step in [19]:
     st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
                                                     st_arr,
@@ -157,14 +194,25 @@ for time_step in range(19, 40, 5):
                                                     pred_h=pred_h)
 
 
-    actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i, traj_n=50, pred_h=pred_h)
+    actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
+    best_traj = choose_traj(actions, prob_mlon, prob_mlat)
     fig, axs = plt.subplots(1, 5, figsize=(20,3))
     fig.subplots_adjust(wspace=0.05, hspace=0)
-    titles = ['Vehicle A',
-            'Vehicle A',
-            'Vehicle B ',
-            'Vehicle C ',
-            'Vehicle D ']
+    titles = [
+            'Vehicle $v_{0}$,'+
+                ' $\dot x_{0}:$'+str(round(st_arr[time_step, m_speed_indx], 1))+'$ms^{-1},$',
+            'Vehicle $v_{0}$,'+
+                ' $\Delta y_{0}$:'+str(round(st_arr[time_step, m_pc_indx], 1))+'$m$',
+            'Vehicle $v_{1}$,'+
+                ' $\dot x_{1}:$'+str(round(st_arr[time_step, y_speed_indx], 1))+'$ms^{-1}$,'+
+                ' $\Delta x_{1}$:'+str(round(st_arr[time_step, y_dx_indx], 1))+'$m$',
+            'Vehicle $v_{2}$,'+
+                ' $\dot x_{2}:$'+str(round(st_arr[time_step, fadj_speed_indx], 1))+'$ms^{-1}$,'+
+                ' $\Delta x_{2}$:'+str(round(st_arr[time_step, fadj_dx_indx], 1))+'$m$',
+            'Vehicle $v_{3}$,'+
+                ' $\dot x_{3}:$'+str(round(st_arr[time_step, f_speed_indx], 1))+'$ms^{-1}$,'+
+                ' $\Delta x_{3}$:'+str(round(st_arr[time_step, f_dx_indx], 1))+'$m$'
+            ]
 
     for ax_i in range(5):
         axs[ax_i].set_ylim([-3,3])
@@ -173,45 +221,68 @@ for time_step in range(19, 40, 5):
         axs[ax_i].spines['top'].set_visible(False)
         axs[ax_i].xaxis.get_major_ticks()[1].label1.set_visible(False)
         axs[ax_i].xaxis.get_major_ticks()[1].label2.set_visible(False)
+        axs[ax_i].grid()
         if ax_i == 1:
-            axs[ax_i].set_ylabel('Lateral action [$m/s$]')
+            axs[ax_i].set_ylabel('Lateral action [$ms^{-1}$]', labelpad=-5)
         else:
-            axs[ax_i].set_ylabel('Longitudinal action [$m/s^2$]')
+            axs[ax_i].set_ylabel('Longitudinal action [$ms^{-2}$]', labelpad=-5)
         axs[ax_i].set_xlabel('Time [s]')
 
         if ax_i>0:
             # axs[ax_i].set_yticks([])
             axs[ax_i].set_yticklabels([])
 
-
     for act_n in range(5):
-        trajs = actions[:,:,act_n]
-        avg_traj = np.mean(trajs, axis=0)
-        st_dev = np.std(trajs, axis=0)
-        axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
 
-        if time_step == 19:
-            axs[act_n].title.set_text(titles[act_n])
-        axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red')
+        axs[act_n].fill_between([-1.9,0],[-3,-3], [3,3], color='lightgrey')
+        axs[act_n].title.set_text(titles[act_n])
+        axs[act_n].plot(np.arange(0, pred_h, 0.1), targ_i[:, act_n], color='red', linestyle='--')
         axs[act_n].plot(np.arange(-1.9, 0.1, 0.1), history_i[:, act_n], color='black', linewidth=2)
         if act_n < 2:
-            axs[act_n].plot(np.arange(0, pred_h, 0.1), avg_traj, color='purple')
-            # axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='lightskyblue')
-        for trj in range(50):
-            axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3)
+            trajs = actions[:,:,act_n]
+            st_dev = np.std(trajs, axis=0)
+            avg_traj = np.mean(trajs, axis=0)
+            axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[best_traj,:,act_n], color='green', linestyle='--')
+            axs[act_n].fill_between(np.arange(0, pred_h, 0.1), avg_traj+st_dev, avg_traj-st_dev, color='orange', alpha=0.3)
+            # axs[act_n].plot(np.arange(0, pred_h, 0.1), avg_traj, color='purple')
+
+        else:
+            for trj in range(50):
+                axs[act_n].plot(np.arange(0, pred_h, 0.1), actions[trj,:,act_n], color='grey', linewidth=0.3, alpha=0.3)
+# plt.savefig("scene_evolution.PNG", dpi=2000)
+# %%
+
+from scipy.ndimage.filters import gaussian_filter
+from matplotlib import cm
+
+def plot_heatmap(x, y, smoothing):
+
+    return fig, ax
+fig, ax = plot_heatmap(x, y, 30)
+ax.set_xticklabels([])
+ax.set_yticklabels([])
+
+# %%
+x = actions[1,:,0]
+y = range(0, 20)
+smoothing = 2
+fig =  plt.figure(figsize=(20,7))
+ax = fig.add_subplot()
+heatmap, xedges, yedges = np.histogram2d(x, y, bins=800)
+s = smoothing
+heatmap = gaussian_filter(heatmap, sigma=s)
+extent = [xedges.min(), xedges.max(), yedges.min(), yedges.max()]
+# extent = [xedges.min(), xedges.max(), yedges.min(), yedges.max()]
+
+img, extent = heatmap.T, extent
+ax.imshow(img, extent=extent, origin='lower', cmap=cm.jet)
 
 
 # %%
+actions.shape
+jerk_tot.shape
 
-for rwse_veh in ['long_vel', 'lat_vel']:
-    plt.figure()
-    plt.title(rwse_veh)
-    for exp in exp_names:
-        # plt.plot(rwse_exp[exp][rwse_veh])
-        plt.plot(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-        plt.scatter(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-    plt.grid()
-    plt.legend(exp_names)
+
 # %%
 """ rwse plots
 """
@@ -230,22 +301,6 @@ for ax_i in range(3):
 
 # %%
 
-for rwse_veh in ['long_vel', 'lat_vel']:
-    plt.figure()
-    plt.title(rwse_veh)
-    # plt.set_ylim([3,-3])
-    plt.xlim([0,3.6])
-    plt.xlabel('Horizon (s)')
-    if rwse_veh == 'long_vel':
-        plt.ylabel('Longitudinal speed (m/s)')
-    else:
-        plt.ylabel('Lateral speed (m/s)')
-    for exp in exp_names:
-        # plt.plot(rwse_exp[exp][rwse_veh])
-        plt.plot(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-        plt.scatter(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-    plt.grid()
-    plt.legend(exp_names)
 
 # %%
 """get rwse
@@ -272,16 +327,6 @@ series057exp003: 10 steps-3s
 series057exp005: 7 steps-2s
 series057exp004: 3 steps-1s
 """
-
-# exp_names = ['series057exp001',
-#             'series057exp003',
-#             'series057exp005',
-#             'series057exp004']
-# exp_names = ['series057exp005',
-#             'series058exp001',
-#             'series059exp001',
-#             'series059exp002',
-#             'series058exp002']
 exp_names = [
             'series060exp007',
             'series059exp001']
@@ -311,7 +356,8 @@ for rwse_veh in ['long_vel', 'lat_vel']:
 fig_num = 0
 pred_h = 4
 # for episode in [2895, 1289]:
-for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
+for episode in [2895, 1289, 1037]:
+# for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
     st_seq, cond_seq, _, targ_arr = eval_obj.episodeSetup(episode)
     st_i, cond_i, bc_der_i, _, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
@@ -319,7 +365,7 @@ for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
                                                     targ_arr,
                                                     current_step=19,
                                                     pred_h=pred_h)
-    actions = eval_obj.policy.get_actions([st_i, cond_i], bc_der_i,
+    actions = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i,
                                                         traj_n=10, pred_h=pred_h)
 
     for act_n in range(5):
