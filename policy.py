@@ -350,7 +350,7 @@ class ModelEvaluation():
                     'vel_f':3,
                     'vel_fadj':4}
 
-        pred_step_n = self.pred_h*10
+        pred_step_n = self.pred_h*10+1
         splits_n = 6 # number of splits across an entire trajectory
         pred_arrs = [np.zeros([self.episode_n*self.traj_n*6,
                                                 pred_step_n]) for i in range(5)]
@@ -380,7 +380,7 @@ class ModelEvaluation():
                 targ_i.shape = (1, pred_step_n, 5)
                 st_init = np.repeat(np.reshape(st_i[0,:], [1,17]), self.traj_n, axis=0)
 
-                actions = self.policy.get_actions([st_seq_i, cond_seq_i], bc_der_i,
+                actions, _, _ = self.policy.get_actions([st_seq_i, cond_seq_i], bc_der_i,
                                         traj_n=self.traj_n, pred_h=self.pred_h)
                 st_pred = self.gen_model.forwardSim(st_init, actions, pred_step_n)
 

@@ -10,11 +10,11 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series079exp002'
+exp_to_evaluate = 'series077exp005'
 config = loadConfig(exp_to_evaluate)
 traffic_density = ''
 # traffic_density = 'high_density_'
-# traffic_density = 'medium_density_'
+traffic_density = 'medium_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
@@ -23,7 +23,12 @@ eval_obj = ModelEvaluation(model, test_data, config)
 eval_obj.compute_rwse(traffic_density)
 # actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
 # prob_mlon.shape
-
+"""
+series077exp005 - 1s training horizon
+series077exp001 - 2s training horizon
+series077exp004 - 3s training horizon
+series077exp003 - 4s training horizon
+"""
 
 # %%
 """Compare rwse for different architectures and traffic densities
@@ -52,8 +57,8 @@ exps = [
         'series079exp002',
         ]
 densities = ['high_density_']
-densities = ['low_density_']
 densities = ['medium_density_']
+densities = ['low_density_']
 
 discounted_exp_results = {}
 exp_names = []
@@ -105,7 +110,7 @@ ax.grid(axis='y', alpha=0.3)
 fig.tight_layout()
 
 plt.show()
-fig.savefig("medium_density_performance.png", dpi=200)
+fig.savefig("low_density_performance.png", dpi=200)
 
 # %%
 
@@ -149,37 +154,12 @@ for time_step in range(40):
 
     plt.grid()
 # %%
-"""How good is my planning and prediction?
+""" rwse against training horizon
 """
-act_n = 0
-trajs = actions[:,:,act_n]
-trajs.shape
-avg_traj = np.mean(trajs, axis=0)
-st_dev = np.std(trajs, axis=0)
-for trj in range(10):
-    plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey')
-plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), avg_traj)
-
-plt.plot(np.arange(0, 2, 0.1), history_i[:, act_n], color='orange')
-plt.plot(np.arange(1.9, 1.9+pred_h+0.1, 0.1), targ_i[:, act_n], color='red')
-plt.fill_between(np.arange(1.9, 1.9+pred_h+0.1, 0.1), avg_traj+st_dev, avg_traj-st_dev)
-plt.grid()
 # %%
+
 """ scene evolution plots
 """
-for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
-    plt.figure()
-    st_seq, cond_seq, st_arr, targ_arr = eval_obj.episodeSetup(episode)
-    plt.plot(targ_arr[:, 1])
-    plt.grid()
-    plt.title(str(episode))
-# %%
-
-
-cost_terms = [jerk_m_long, jerk_m_lat, jerk_y, traj_deviation_long, \
-                                                                traj_deviation_lat]
-
-# %%
 def choose_traj(actions, prob_mlon, prob_mlat):
     """Returns the index of the chosen traj
         Criteria:
@@ -286,105 +266,6 @@ for time_step in [19, 29, 39]:
 # plt.savefig("scene_evolution.png", dpi=200)
 # %%
 
-from scipy.ndimage.filters import gaussian_filter
-from matplotlib import cm
-
-def plot_heatmap(x, y, smoothing):
-
-    return fig, ax
-fig, ax = plot_heatmap(x, y, 30)
-ax.set_xticklabels([])
-ax.set_yticklabels([])
-
-# %%
-x = actions[1,:,0]
-y = range(0, 20)
-smoothing = 2
-fig =  plt.figure(figsize=(20,7))
-ax = fig.add_subplot()
-heatmap, xedges, yedges = np.histogram2d(x, y, bins=800)
-s = smoothing
-heatmap = gaussian_filter(heatmap, sigma=s)
-extent = [xedges.min(), xedges.max(), yedges.min(), yedges.max()]
-# extent = [xedges.min(), xedges.max(), yedges.min(), yedges.max()]
-
-img, extent = heatmap.T, extent
-ax.imshow(img, extent=extent, origin='lower', cmap=cm.jet)
-
-
-# %%
-actions.shape
-jerk_tot.shape
-
-
-# %%
-""" rwse plots
-"""
-fig, axs = plt.subplots(2, 2, figsize=(10,10))
-fig.subplots_adjust(wspace=0.05, hspace=0)
-
-for ax_i in range(3):
-    axs[0,0].set_ylim([3,-3])
-    axs[1].set_xlim([0,6.5])
-    # axs[time_frame, ax_i].spines['right'].set_visible(False)
-    # axs[time_frame, ax_i].spines['top'].set_visible(False)
-    if ax_i>0:
-        # axs[time_frame, ax_i].set_yticks([])
-        axs[time_frame, ax_i].set_yticklabels([])
-
-
-# %%
-
-
-# %%
-"""get rwse
-"""
-exp_names = ['series057exp003',
-            'series057exp004',
-            'series057exp005']
-
-for exp_name in exp_names:
-
-    # check if rwse exists, ignore it!
-    config = loadConfig(exp_name)
-    # config = loadConfig('series044exp006')
-    model = MergePolicy(config)
-    eval_obj = ModelEvaluation(model, config)
-    # eval_obj.compute_rwse()
-# %%
-"""visualise rwse
-"""
-"""
-Effect of training horizon:
-series057exp001: 14 steps-4s
-series057exp003: 10 steps-3s
-series057exp005: 7 steps-2s
-series057exp004: 3 steps-1s
-"""
-exp_names = [
-            'series060exp007',
-            'series059exp001']
-rwse_exp = {}
-for exp in exp_names:
-    dirName = './models/experiments/'+exp
-    with open(dirName+'/'+'rwse_long_lat_vel', 'rb') as f:
-        rwse_exp[exp] = dill.load(f, ignore=True)
-
-
-for rwse_veh in ['long_vel', 'lat_vel']:
-    plt.figure()
-    plt.title(rwse_veh)
-    for exp in exp_names:
-        # plt.plot(rwse_exp[exp][rwse_veh])
-        plt.plot(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-        plt.scatter(np.arange(0, 3.6, 0.5), rwse_exp[exp][rwse_veh][::5])
-        # plt.xlim([0, 2.1])
-    plt.grid()
-    plt.legend(exp_names)
-
-# %%
-# %%
-
 
 # %%
 fig_num = 0
@@ -417,13 +298,3 @@ for episode in [2895, 1289, 1037]:
         else:
             plt.ylabel('Acceleration [$m/s^2$]')
         fig_num += 1
-
-# %%
-config = loadConfig('series025exp001')
-test_data = TestdataObj(config)
-model = MergePolicy(config)
-eval_obj = ModelEvaluation(model, config)
-for episode_id in [2895, 1289]:
-    vis(episode_id)
-# %%
-# eval_obj.compute_rwse()
