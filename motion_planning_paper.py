@@ -10,25 +10,27 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series077exp005'
+exp_to_evaluate = 'series081exp001'
 config = loadConfig(exp_to_evaluate)
 traffic_density = ''
-# traffic_density = 'high_density_'
-traffic_density = 'medium_density_'
+# traffic_density = 'high_densit_'
+# traffic_density = 'medium_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
 model = MergePolicy(test_data, config)
 eval_obj = ModelEvaluation(model, test_data, config)
 eval_obj.compute_rwse(traffic_density)
-# actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
+
+st_seq, cond_seq, _, targ_arr = eval_obj.episodeSetup(episode)
+st_i, cond_i, bc_der_i, _, _, targ_i = eval_obj.sceneSetup(st_seq,
+                                                cond_seq,
+                                                _,
+                                                targ_arr,
+                                                current_step=19,
+                                                pred_h=pred_h)
+actions, prob_mlon, prob_mlat = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i, traj_n=50, pred_h=pred_h)
 # prob_mlon.shape
-"""
-series077exp005 - 1s training horizon
-series077exp001 - 2s training horizon
-series077exp004 - 3s training horizon
-series077exp003 - 4s training horizon
-"""
 
 # %%
 """Compare rwse for different architectures and traffic densities
@@ -37,9 +39,10 @@ discount_factor = 0.9
 gamma = np.power(discount_factor, np.array(range(0,20)))
 
 exps = [
-        'series077exp001', # baseline
-        'series078exp001', # only target car in conditional = to show interactions mater
+        # 'series077exp001', # baseline
+        # 'series078exp001', # only target car in conditional = to show interactions mater
         'series079exp002', # no teacher helping - to show it maters
+        'series081exp001',
         ]
 densities = ['low_density_','medium_density_', 'high_density_']
 
@@ -52,13 +55,15 @@ for exp_i in range(len(exps)):
 
 # %%
 exps = [
-        'series077exp001',
-        'series078exp001',
+        # 'series077exp001',
+        # 'series078exp001',
         'series079exp002',
+        'series081exp001',
+
         ]
 densities = ['high_density_']
 densities = ['medium_density_']
-densities = ['low_density_']
+# densities = ['low_density_']
 
 discounted_exp_results = {}
 exp_names = []
@@ -74,6 +79,16 @@ for exp_name in exp_names:
 # %%
 """To visualise rwse against prediction horizon
 """
+densities = ['high_density_']
+# densities = ['medium_density_']
+# densities = ['low_density_']
+
+discounted_exp_results = {}
+exp_names = []
+for exp in exps:
+    for density in densities:
+        exp_names.append(exp+density)
+
 for key in ['vel_m','lat_vel','vel_y','vel_f','vel_fadj']:
     legends = []
     plt.figure()
@@ -124,7 +139,7 @@ st_i, cond_i, bc_der_i, history_i, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                 cond_seq,
                                                 st_arr,
                                                 targ_arr,
-                                                current_step=19,
+                                                current_step=9,
                                                 pred_h=pred_h)
 
 
@@ -155,7 +170,57 @@ for time_step in range(40):
     plt.grid()
 # %%
 """ rwse against training horizon
+
+series077exp008 - 1 steps
+series077exp005 - 3 steps
+series077exp001 - 7 steps
+series077exp004 - 10 steps
+series077exp003 - 13 steps
 """
+
+exps = [
+        'series077exp008',
+        'series077exp005',
+        'series077exp001',
+        'series077exp004',
+        'series077exp003',
+        ]
+densities = ['medium_density_']
+# densities = ['high_density_']
+
+rwses = {}
+for exp_i in range(len(exps)):
+    for density_i in range(len(densities)):
+        dirName = './models/experiments/'+exps[exp_i]+'/'+densities[density_i]+'rwse'
+        with open(dirName, 'rb') as f:
+            rwses[exps[exp_i]+densities[density_i]] = dill.load(f, ignore=True)
+# %%
+fig, axs = plt.subplots(1, 2, figsize=(10,5))
+fig.subplots_adjust(left=None, bottom=None, right=None, top=None, wspace=0.3, hspace=None)
+
+considered_states = ['vel_m','lat_vel']
+
+exp_names = []
+for exp in exps:
+    for density in densities:
+        exp_names.append(exp+density)
+legends = ['s=1','s=1','s=1','s=1','s=1',]
+axs[0].set_xlabel('Time [s]')
+axs[0].set_ylabel('$\dot x_{0}$ RWSW [m] ')
+axs[0].set_ylim([0,2.6])
+axs[0].yaxis.set_ticks(np.arange(0, 2.6, 0.25))
+
+axs[1].set_xlabel('Time [s]')
+axs[1].set_ylabel('$\dot y_{0}$ RWSW [$ms^{-1}$] ')
+axs[1].set_ylim([0,2.6])
+axs[1].yaxis.set_ticks(np.arange(0, 2.6, 0.25))
+
+for key in range(2):
+    for exp_name in exp_names:
+        axs[key].plot(np.arange(0,2.1,0.1), rwses[exp_name][considered_states[key]])
+
+    axs[key].grid(axis='y')
+axs[0].legend(legends)
 # %%
 
 """ scene evolution plots
@@ -280,7 +345,7 @@ for episode in [2895, 1289, 1037]:
                                                     targ_arr,
                                                     current_step=19,
                                                     pred_h=pred_h)
-    actions = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i,
+    actions, _, _ = eval_obj.policy.get_actions([st_i.copy(), cond_i.copy()], bc_der_i,
                                                         traj_n=10, pred_h=pred_h)
 
     for act_n in range(5):
@@ -290,7 +355,7 @@ for episode in [2895, 1289, 1037]:
         for trj in range(10):
             plt.plot(np.arange(0, pred_h+0.1, 0.1), actions[trj,:,act_n], color='grey')
 
-        plt.grid()
+        # plt.grid()
         plt.title(str(fig_num)+'-'+exp_to_evaluate)
         plt.xlabel('Prediction horizon [s]')
         if act_n == 1:

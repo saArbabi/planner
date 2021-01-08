@@ -125,7 +125,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-6')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model
@@ -264,16 +264,15 @@ class ModelEvaluation():
         traj_len = len(state_arr)
         step_size = test_data.data_obj.step_size
         pred_step_n = int(np.ceil(self.pred_h/(step_size*0.1)))
-        obs_n = test_data.data_obj.obs_n
         conds = [[],[],[],[],[]]
         states = []
 
         if traj_len > 20:
-            prev_states = deque(maxlen=obs_n)
+            prev_states = deque(maxlen=20)
             for i in range(traj_len):
                 prev_states.append(state_arr[i])
 
-                if len(prev_states) == obs_n:
+                if len(prev_states) == 20:
                     indx = np.arange(i, i+(pred_step_n+1)*step_size, step_size)
                     indx = indx[indx<traj_len]
                     if indx.size != pred_step_n+1:
@@ -298,11 +297,13 @@ class ModelEvaluation():
         """Set up a scence for a given initial step.
             Note: steps are index of numpy array, starting from 0.
         """
+        obs_n = self.test_data.data_obj.obs_n
+
         start_step = current_step - 19
         end_step = int(current_step + pred_h/0.1)
 
         bc_der_i = (targ_arr[current_step, :]-targ_arr[current_step-1, :])*10
-        st_seq_i = st_seq[start_step,:,:]
+        st_seq_i = st_seq[start_step, -obs_n:,:]
 
         cond_seq_i = [cond_seq[n][start_step,:,:] for n in range(5)]
         history_i = targ_arr[start_step:current_step+1, :]
@@ -367,9 +368,9 @@ class ModelEvaluation():
                 splits_n = 6
             else:
                 splits_n = len(st_seq)
-
+            obs_n = self.test_data.data_obj.obs_n
             traj_splits = np.random.choice(range(19, 19+len(st_seq)), splits_n, replace=False)
-
+            # leave value of 19 to ensure scenarios remain consistent
             for split in traj_splits:
                 st_seq_i, cond_seq_i, bc_der_i, _, st_i, targ_i = self.sceneSetup(st_seq,
                                                                 cond_seq,
