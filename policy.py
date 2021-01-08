@@ -303,7 +303,8 @@ class ModelEvaluation():
         end_step = int(current_step + pred_h/0.1)
 
         bc_der_i = (targ_arr[current_step, :]-targ_arr[current_step-1, :])*10
-        st_seq_i = st_seq[start_step, -obs_n:,:]
+        st_seq_i = st_seq[start_step, -obs_n:,:] # -obs_n will allow for variable observation length
+
 
         cond_seq_i = [cond_seq[n][start_step,:,:] for n in range(5)]
         history_i = targ_arr[start_step:current_step+1, :]
