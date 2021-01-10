@@ -125,7 +125,7 @@ class MergePolicy():
         self.model = CAE(config, model_use='inference')
         Checkpoint = tf.train.Checkpoint(net=self.model)
         # Checkpoint.restore(tf.train.latest_checpoint(checkpoint_dir)).expect_partial()
-        Checkpoint.restore(checkpoint_dir+'/ckpt-10')
+        Checkpoint.restore(checkpoint_dir+'/ckpt-6')
 
         self.enc_model = self.model.enc_model
         self.dec_model = self.model.dec_model

@@ -10,7 +10,7 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series081exp001'
+exp_to_evaluate = 'series081exp003'
 config = loadConfig(exp_to_evaluate)
 traffic_density = ''
 # traffic_density = 'high_densit_'
@@ -336,8 +336,8 @@ for time_step in [19, 29, 39]:
 fig_num = 0
 pred_h = 4
 # for episode in [2895, 1289]:
-for episode in [2895, 1289, 1037]:
-# for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
+# for episode in [2895, 1289, 1037]:
+for episode in [2895, 1289, 1037, 2870, 2400, 1344, 2872, 2266, 2765, 2215]:
     st_seq, cond_seq, _, targ_arr = eval_obj.episodeSetup(episode)
     st_i, cond_i, bc_der_i, _, _, targ_i = eval_obj.sceneSetup(st_seq,
                                                     cond_seq,
