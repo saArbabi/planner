@@ -7,11 +7,11 @@ reload(policy)
 from planner.policy import TestdataObj, MergePolicy, ModelEvaluation
 import dill
 
-exp_to_evaluate = 'series081exp001'
+exp_to_evaluate = 'series083exp002'
 config = loadConfig(exp_to_evaluate)
 traffic_density = ''
-# traffic_density = 'high_densit_'
-traffic_density = 'medium_density_'
+traffic_density = 'high_density_'
+# traffic_density = 'medium_density_'
 # traffic_density = 'low_density_'
 test_data = TestdataObj(traffic_density, config)
 
@@ -25,15 +25,23 @@ eval_obj.compute_rwse(traffic_density)
 exps = [
         # 'series077exp001',
         # 'series078exp001',
-        'series079exp002',
-        'series081exp001',
+        # 'series079exp002',
+        # 'series081exp001',
+        'series081exp002',
+        'series082exp001',
+        'series082exp002',
 
         ]
-densities = ['high_density_']
+densities = ['hwigh_density_']
 # densities = ['medium_density_']
 # densities = ['low_density_']
+rwses = {}
+for exp_i in range(len(exps)):
+    for density_i in range(len(densities)):
+        dirName = './models/experiments/'+exps[exp_i]+'/'+densities[density_i]+'rwse'
+        with open(dirName, 'rb') as f:
+            rwses[exps[exp_i]+densities[density_i]] = dill.load(f, ignore=True)
 
-discounted_exp_results = {}
 exp_names = []
 for exp in exps:
     for density in densities:

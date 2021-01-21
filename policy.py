@@ -147,15 +147,18 @@ class MergePolicy():
         # get enc_h state
         enc_state = self.enc_model(st_seq)
 
-        self.skip_n = 3 # done for a smoother trajectory
+        self.skip_n = 2 # done for a smoother trajectory
         self.step_len = round(self.skip_n*self.data_obj.step_size*0.1, 1) # [s]
         steps_n = int(np.ceil(np.ceil(pred_h/self.step_len)*self.step_len/ \
                                                     (self.data_obj.step_size*0.1)))
-
+        print('steps_n: ', steps_n)
         self.dec_model.steps_n = steps_n
         self.dec_model.traj_n = traj_n
+        t0 = time.time()
+
         sampled_actions, gmm_mlon, gmm_mlat, prob_mlon, prob_mlat = self.dec_model(\
                                                                 [cond_seq, enc_state])
+        print(time.time() - t0)
         prob_mlon = prob_mlon.numpy()
         prob_mlat = prob_mlat.numpy()
         return sampled_actions, gmm_mlon, gmm_mlat, prob_mlon, prob_mlat
@@ -167,7 +170,7 @@ class MergePolicy():
         traj_len = self.dec_model.steps_n*self.data_obj.step_size*0.1 # [s]
         trajectories = np.zeros([traj_n, int(traj_len*10)+1, 5])
         x_whole = np.arange(0, traj_len+0.1, self.step_len)
-        x_snippet = np.arange(0, traj_len+0.1, 0.1)
+        x_snippet = np.arange(0, traj_len, 0.1)
         # t0 = time.time()
 
         for act_n in range(5):
