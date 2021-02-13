@@ -20,7 +20,7 @@ class Env():
         self.lane_width = 3.7 #m
         self.viewer = None
         self.observation_history = []
-        self.  = {} # cars indexed by their id
+        self.vehicles = {} # cars indexed by their id
         self.ego = None
         self.max_speed = 20 # m/s
 

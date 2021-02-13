@@ -1,9 +1,8 @@
-from tree_search.agents import Vehicle, EgoVehicle
+from agents import Vehicle, EgoVehicle
 from env import Env
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-os.getcwd()
+import gym
 import time
 env = Env(2)
 env.ego = EgoVehicle(env, x=30, vel=10, lane_id=1)
@@ -12,14 +11,15 @@ env.vehicles['bl'].act_long = 1
 # env.vehicles['f'] = Vehicle(x=30, vel=10, lane_id=1)
 
 # env.vehicles['f'] = Vehicle(x=60, vel=9, lane_id=1)
-
+ 
 obs = env.reset()
 # env.record (env_object=env.ego, attribute='vel')
 # env.record (env_object=env.ego, attribute='vel')
 # env.record(env_object=env.vehicles['f'], attribute='desired_headway')
 
 # env.render(PAUSE_CONTROL='on')
-env.render(PAUSE_CONTROL='off')
+env.render(PAUSE_CONTROL='on')
+# env.render(PAUSE_CONTROL='off')
 
 env.record(env_object=env.ego, attribute='vel')
 env.viewer.set_ego_label(env_object=env.ego, attribute='vel')

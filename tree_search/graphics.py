@@ -171,3 +171,4 @@ class Viewer():
 
         if self.var_recording:
             self.draw_recorded_var(self.ax_recorded_variable)
+        self.fig.show()
